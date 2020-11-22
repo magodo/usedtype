@@ -38,10 +38,10 @@ func NewUseDefBranch(instr ssa.Instruction, value ssa.Value) UseDefBranch {
 	}
 }
 
-// previous move one step backward in the use-def chain to the previous def point and return the new set of use-def branches.
+// next move one step backward in the use-def chain to the next def point and return the new set of use-def branches.
 // If there is no new def point (referrer) back in the chain, the current branch is returned with the "end" set to true.
-func (branch UseDefBranch) previous() UseDefBranches {
-	referInstrs := sourceReferrers(branch.instr)
+func (branch UseDefBranch) next() UseDefBranches {
+	referInstrs := branch.sourceReferrersOfInstruction(branch.instr)
 
 	// In case current instruction has no referrer, it means current use-def branch reaches to the end.
 	// This is possible in cases like "Const" instruction.
@@ -52,7 +52,7 @@ func (branch UseDefBranch) previous() UseDefBranches {
 
 	// This is to avoid duplicate referrer instructions occur during iteration.
 	// It may contain duplicates if an instruction has a repeated operand.
-	seenInstructions := map[ssa.Instruction]struct{}{}
+	seenInstructions := map[ssa.Instruction]struct{}{branch.instr: {}}
 	for k, v := range branch.seenInstructions {
 		seenInstructions[k] = v
 	}
@@ -102,8 +102,8 @@ func (branch UseDefBranch) previous() UseDefBranches {
 // in different places).
 func (branches UseDefBranches) Walk() UseDefBranches {
 	var toContinue bool
-	for _, ctx := range branches {
-		if !ctx.end {
+	for _, branch := range branches {
+		if !branch.end {
 			toContinue = true
 		}
 	}
@@ -114,27 +114,96 @@ func (branches UseDefBranches) Walk() UseDefBranches {
 
 	var newBranches UseDefBranches
 	for _, branch := range branches {
-		prevBranches := branch.previous()
-		for _, prevBranch := range prevBranches {
-			newBranches = append(newBranches, prevBranch)
+		nextBranches := branch.next()
+		for _, nextBranch := range nextBranches {
+			newBranches = append(newBranches, nextBranch)
 		}
 	}
 
 	return newBranches.Walk()
 }
 
-// sourceReferrers return the instructions that defines the used value in the instruction.
-func sourceReferrers(instr ssa.Instruction) *[]ssa.Instruction {
+// sourceReferrersOfInstruction return the instructions that defines the used value in the instruction.
+func (branch *UseDefBranch) sourceReferrersOfInstruction(instr ssa.Instruction) *[]ssa.Instruction {
 	switch instr := instr.(type) {
 	case *ssa.UnOp:
-		return instr.X.Referrers()
+		return branch.sourceReferrersOfValue(instr)
 	case *ssa.FieldAddr:
-		return instr.Referrers()
+		return branch.sourceReferrersOfValue(instr)
+	case *ssa.Phi:
+		return branch.sourceReferrersOfValue(instr)
+	case *ssa.Call:
+		return branch.sourceReferrersOfValue(instr)
 	case *ssa.Store:
-		return instr.Val.Referrers()
+		return branch.sourceReferrersOfValue(instr.Val)
+	case *ssa.Return:
+		var instrs []ssa.Instruction
+		for _, result := range instr.Results {
+			srcinstrs := branch.sourceReferrersOfValue(result)
+			if srcinstrs != nil {
+				instrs = append(instrs, *srcinstrs...)
+			}
+		}
+		return &instrs
 	default:
-		// TODO
-		ret := []ssa.Instruction{}
-		return &ret
+		panic("TODO")
+	}
+}
+
+func (branch *UseDefBranch) sourceReferrersOfValue(value ssa.Value) *[]ssa.Instruction {
+	switch value := value.(type) {
+	case *ssa.Alloc:
+		return value.Referrers()
+	case *ssa.BinOp:
+		var referrers []ssa.Instruction
+		xref := branch.sourceReferrersOfValue(value.X)
+		if xref != nil {
+			referrers = append(referrers, *xref...)
+		}
+		yref := branch.sourceReferrersOfValue(value.Y)
+		if yref != nil {
+			referrers = append(referrers, *yref...)
+		}
+		return &referrers
+	case *ssa.Const:
+		return value.Referrers()
+	case *ssa.UnOp:
+		return branch.sourceReferrersOfValue(value.X)
+	case *ssa.FieldAddr:
+		return value.Referrers()
+	//case *ssa.Phi:
+	//	// TODO
+	case *ssa.Call:
+		callcomm := value.Common()
+		if callcomm.Method == nil {
+			// call mode
+			switch v := callcomm.Value.(type) {
+			case *ssa.Function:
+				var instrs []ssa.Instruction
+				for _, b := range v.Blocks {
+					// The return instruction is guaranteed to be the last instruction in each BasicBlock
+					if instr, ok := b.Instrs[len(b.Instrs)-1].(*ssa.Return); ok {
+						// record the return instruction to the seen instruction map
+						branch.seenInstructions[instr] = struct{}{}
+						referrers := branch.sourceReferrersOfInstruction(instr) // TODO: Will there be cyclic ref?
+						if referrers != nil {
+							instrs = append(instrs, *referrers...)
+						}
+					}
+				}
+				return &instrs
+			case *ssa.MakeClosure:
+				panic("TODO")
+			case *ssa.Builtin:
+				panic("TODO")
+			default:
+				panic("should not reach here")
+			}
+		} else {
+			// invoke mode (dynamic dispatch on interface)
+			panic("TODO")
+		}
+	default:
+		panic("TODO")
 	}
 }

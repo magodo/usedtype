@@ -22,12 +22,9 @@ func buildPackages() ([]*packages.Package, []*ssa.Package) {
 		log.Fatalf("packages contain errors")
 	}
 
-	// Create SSA packages for all well-typed packages.
-	_, ssapkgs := ssautil.Packages(pkgs, 0)
-	//prog, ssapkgs := ssautil.Packages(pkgs, ssa.GlobalDebug)
-
-	for _, pkg := range ssapkgs {
-		pkg.Build()
-	}
+	// Build SSA for the specified "pkgs" and their dependencies.
+	// The returned ssapkgs is the corresponding SSA Package of the specified "pkgs".
+	prog, ssapkgs := ssautil.AllPackages(pkgs, 0)
+	prog.Build()
 	return pkgs, ssapkgs
 }

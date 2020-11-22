@@ -4,6 +4,7 @@ import (
 	"fmt"
 	myssa "github.com/magodo/usedtype/ssa"
 	"go/types"
+	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 )
 
@@ -31,9 +32,53 @@ func main() {
 				myssa.NewUseDefBranch(node.instr, node.v),
 			}
 			newbranches := branches.Walk()
-			fmt.Println(newbranches)
+			for _, b := range newbranches {
+				fmt.Println(b)
+			}
 		}
 	}
+	return
+}
+
+func terraformSchemaTypeFilter(epkg *packages.Package, t *types.Struct) bool {
+	scope := epkg.Types.Scope()
+	for _, topType := range scope.Names() {
+		et := scope.Lookup(topType).Type()
+		switch et := et.(type) {
+		case *types.Named:
+			var c, d *types.Func
+			for i := 0; i < et.NumMethods(); i++ {
+				m := et.Method(i)
+				switch m.Name() {
+				case "CreateOrUpdate",
+					"Create":
+					c = m
+				case "Delete":
+					d = m
+				}
+			}
+			// Terraform only care resources that can be created and deleted.
+			if c == nil || d == nil {
+				continue
+			}
+			signature := c.Type().(*types.Signature)
+			lastParam := signature.Params().At(signature.Params().Len() - 1)
+			nt, ok := lastParam.Type().(*types.Named)
+			if !ok {
+				continue
+			}
+			st, ok := nt.Underlying().(*types.Struct)
+			if !ok {
+				continue
+			}
+			if types.Identical(st, t) {
+				return true
+			}
+		default:
+			continue
+		}
+	}
+	return false
 }
 
 type ssaValue struct {
@@ -70,4 +115,3 @@ func findInPackageNodeOfTargetStructType(ssapkgs []*ssa.Package, targetStructs s
 	}
 	return output
 }
-
