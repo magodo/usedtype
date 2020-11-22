@@ -1,8 +1,11 @@
 package ssa
 
 import (
+	"fmt"
 	"go/types"
 	"golang.org/x/tools/go/ssa"
+	"reflect"
+	"strings"
 )
 
 type structField struct {
@@ -10,18 +13,75 @@ type structField struct {
 	t     types.Type
 }
 
+type structFields []structField
+
+
+func (fields structFields) String() string {
+	var underlyingNamed func(t types.Type) *types.Named
+	underlyingNamed = func(t types.Type) *types.Named {
+		switch t := t.(type) {
+		case *types.Named:
+			return t
+		case *types.Pointer:
+			return underlyingNamed(t.Elem())
+		default:
+			panic("Not gonna happen")
+		}
+	}
+
+	underlyingStruct := func(t types.Type) *types.Struct {
+		named := underlyingNamed(t)
+		switch v := named.Underlying().(type) {
+		case *types.Struct:
+			return v
+		default:
+			panic("Not gonna happen")
+		}
+	}
+
+	fieldStrs := []string{}
+	for idx, field := range fields {
+		if idx == 0 {
+			named := underlyingNamed(field.t)
+			fieldStrs = append(fieldStrs, named.Obj().Name())
+		}
+
+		strct := underlyingStruct(field.t)
+		tag := reflect.StructTag(strct.Tag(field.index))
+		jsonTag := tag.Get("json")
+		idx := strings.Index(jsonTag, ",")
+		var fieldName string
+		if idx == -1 {
+			fieldName = jsonTag
+		} else {
+			fieldName = jsonTag[:idx]
+			if fieldName == "" {
+				fieldName = strct.Field(field.index).Name()
+			}
+		}
+		fieldStrs = append(fieldStrs, fieldName)
+	}
+	return strings.Join(fieldStrs, ".")
+}
+
 type UseDefBranch struct {
 	// instr represents the current instruction in the use-def chain
 	instr ssa.Instruction
 
 	// fields keep any struct field in the use-def chain
-	fields []structField
+	fields structFields
 
 	// seenInstructions keep all the instructions met till now, to avoid cyclic reference
 	seenInstructions map[ssa.Instruction]struct{}
 
 	// end means this use-def chain reaches the end
 	end bool
+}
+
+func (b UseDefBranch) String() string {
+	instr := b.instr.String()
+	fields := b.fields.String()
+	return fmt.Sprintf("%s [%s]", instr, fields)
 }
 
 type UseDefBranches []UseDefBranch
@@ -52,7 +112,7 @@ func (branch UseDefBranch) next() UseDefBranches {
 
 	// This is to avoid duplicate referrer instructions occur during iteration.
 	// It may contain duplicates if an instruction has a repeated operand.
-	seenInstructions := map[ssa.Instruction]struct{}{branch.instr: {}}
+	seenInstructions := map[ssa.Instruction]struct{}{}
 	for k, v := range branch.seenInstructions {
 		seenInstructions[k] = v
 	}
@@ -125,6 +185,8 @@ func (branches UseDefBranches) Walk() UseDefBranches {
 
 // sourceReferrersOfInstruction return the instructions that defines the used value in the instruction.
 func (branch *UseDefBranch) sourceReferrersOfInstruction(instr ssa.Instruction) *[]ssa.Instruction {
+	// Record the instruction in the seen instruction set.
+	branch.seenInstructions[instr] = struct{}{}
 	switch instr := instr.(type) {
 	case *ssa.UnOp:
 		return branch.sourceReferrersOfValue(instr)
@@ -150,7 +212,12 @@ func (branch *UseDefBranch) sourceReferrersOfInstruction(instr ssa.Instruction) 
 	}
 }
 
+// sourceReferrersOfValue return the instructions that defines the used value in the Value.
 func (branch *UseDefBranch) sourceReferrersOfValue(value ssa.Value) *[]ssa.Instruction {
+	// In case the value is an instruction itself, we will record it in the seen instruction set.
+	if instr, ok := value.(ssa.Instruction); ok {
+		branch.seenInstructions[instr] = struct{}{}
+	}
 	switch value := value.(type) {
 	case *ssa.Alloc:
 		return value.Referrers()
@@ -171,8 +238,15 @@ func (branch *UseDefBranch) sourceReferrersOfValue(value ssa.Value) *[]ssa.Instr
 		return branch.sourceReferrersOfValue(value.X)
 	case *ssa.FieldAddr:
 		return value.Referrers()
-	//case *ssa.Phi:
-	//	// TODO
+	case *ssa.Phi:
+		var referrers []ssa.Instruction
+		for _, edge := range value.Edges {
+			srcreferrers := branch.sourceReferrersOfValue(edge)
+			if srcreferrers != nil {
+				referrers = append(referrers, *srcreferrers...)
+			}
+		}
+		return &referrers
 	case *ssa.Call:
 		callcomm := value.Common()
 		if callcomm.Method == nil {
@@ -183,8 +257,6 @@ func (branch *UseDefBranch) sourceReferrersOfValue(value ssa.Value) *[]ssa.Instr
 				for _, b := range v.Blocks {
 					// The return instruction is guaranteed to be the last instruction in each BasicBlock
 					if instr, ok := b.Instrs[len(b.Instrs)-1].(*ssa.Return); ok {
-						// record the return instruction to the seen instruction map
-						branch.seenInstructions[instr] = struct{}{}
 						referrers := branch.sourceReferrersOfInstruction(instr) // TODO: Will there be cyclic ref?
 						if referrers != nil {
 							instrs = append(instrs, *referrers...)
