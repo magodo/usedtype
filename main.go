@@ -32,17 +32,17 @@ func main() {
 	// Analyze all the target external packages and get a list of types.Object
 	targetStructs := myssa.FindExternalPackageStruct(pkgs, *pattern, terraformSchemaTypeFilter)
 
-	// Explore the packages under test to see whether there is usedtype node whose type matches any target struct.
+	// Explore the packages under test to see whether there is SSA node whose type matches any target struct.
 	// For each match, we will walk the dominator tree from that node in backward, to record the usage of each
 	// field of the struct.
-	output := myssa.FindInPackageNodeOfTargetStructType(ssapkgs, targetStructs)
+	output := myssa.FindInPackageDefNodeOfTargetStructType(ssapkgs, targetStructs)
 	//fmt.Println(output)
 
 	// Now we need to recursively backward analyze from each found node, to record all the field accesses.
-	for tid, nodes := range output {
-		for _, node := range nodes {
-			var branches myssa.UseDefBranches
-			branches = myssa.NewUseDefBranches(node.Instr, node.V, tid.Pkg.Fset)
+	for tid, values := range output {
+		for _, value := range values {
+			var branches myssa.DefUseBranches
+			branches = myssa.NewDefUseBranches(value, tid.Pkg.Fset)
 			newbranches := branches.Walk()
 			for _, b := range newbranches {
 				fmt.Println(b)

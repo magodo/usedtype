@@ -25,7 +25,7 @@ func NewTraversal() Traversal {
 	}
 }
 
-type WalkCallback func(instr ssa.Instruction, val ssa.Value)
+type WalkCallback func(val ssa.Value)
 
 // WalkInPackage traverse inside a usedtype package from all top level functions (skipping other top level members:
 // Type, NamedConst and Global). It will iterate each instruction and the value belongs to it.
@@ -42,7 +42,7 @@ func (t *Traversal) WalkInPackage(pkg *ssa.Package, cb WalkCallback) {
 			*ssa.NamedConst:
 			// nothing to do, since it will not appear any Value of target type
 		case *ssa.Global:
-			// TODO
+			cb(m)
 		case *ssa.Function:
 			t.walkFunction(pkg, m, cb)
 		default:
@@ -83,24 +83,14 @@ func (t *Traversal) walkInstructions(pkg *ssa.Package, fn *ssa.Function, cb Walk
 
 			// traverse the operands in instructions
 			ops := instr.Operands(nil)
-
-			switch instr.(type) {
-			case *ssa.Store:
-				// ignore the first operands for Store, as that represents the Addr
-				ops = ops[1:]
-			case *ssa.DebugRef:
-				// ignore ops for debug ref
-				ops = nil
-			}
-
 			for _, arg := range ops {
-				t.walkValue(pkg, instr, *arg, cb)
+				t.walkValue(pkg, *arg, cb)
 			}
 		}
 	}
 }
 
-func (t *Traversal) walkValue(pkg *ssa.Package, instr ssa.Instruction, v ssa.Value, cb func(instr ssa.Instruction, v ssa.Value)) {
+func (t *Traversal) walkValue(pkg *ssa.Package, v ssa.Value, cb WalkCallback) {
 	if v == nil {
 		return
 	}
@@ -116,14 +106,14 @@ func (t *Traversal) walkValue(pkg *ssa.Package, instr ssa.Instruction, v ssa.Val
 		case *ssa.Function:
 			t.walkFunction(pkg, v, cb)
 		}
-		cb(instr, v)
+		cb(v)
 		return
 	}
 
 	var applyPhi func(v *ssa.Phi)
 	applyPhi = func(v *ssa.Phi) {
 		for _, e := range v.Edges {
-			t.walkValue(pkg, instr, e, cb)
+			t.walkValue(pkg, e, cb)
 		}
 	}
 	applyPhi(phi)
