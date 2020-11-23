@@ -36,15 +36,13 @@ func main() {
 	// For each match, we will walk the dominator tree from that node in backward, to record the usage of each
 	// field of the struct.
 	output := myssa.FindInPackageNodeOfTargetStructType(ssapkgs, targetStructs)
-	fmt.Println(output)
+	//fmt.Println(output)
 
 	// Now we need to recursively backward analyze from each found node, to record all the field accesses.
 	for _, nodes := range output {
 		for _, node := range nodes {
 			var branches myssa.UseDefBranches
-			branches = []myssa.UseDefBranch{
-				myssa.NewUseDefBranch(node.Instr, node.V),
-			}
+			branches = myssa.NewUseDefBranches(node.Instr, node.V)
 			newbranches := branches.Walk()
 			for _, b := range newbranches {
 				fmt.Println(b)
@@ -94,4 +92,3 @@ func terraformSchemaTypeFilter(epkg *packages.Package, t *types.Struct) bool {
 	}
 	return false
 }
-

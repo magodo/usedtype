@@ -64,6 +64,9 @@ func (fields structFields) String() string {
 }
 
 type UseDefBranch struct {
+	// root is the starting Value of this branch
+	root ssa.Value
+
 	// Instr represents the current instruction in the use-def chain
 	instr ssa.Instruction
 
@@ -73,28 +76,87 @@ type UseDefBranch struct {
 	// seenInstructions keep all the instructions met till now, to avoid cyclic reference
 	seenInstructions map[ssa.Instruction]struct{}
 
+	// seenValues keep all the Values met till now, to avoid cyclic reference
+	seenValues map[ssa.Value]struct{}
+
 	// end means this use-def chain reaches the end
 	end bool
 }
 
-func (b UseDefBranch) String() string {
-	instr := b.instr.String()
-	fields := b.fields.String()
+func (branch UseDefBranch) String() string {
+	instr := ""
+	if branch.instr != nil {
+		instr = branch.instr.String()
+	}
+	fields := branch.fields.String()
 	return fmt.Sprintf("%s [%s]", instr, fields)
 }
 
 type UseDefBranches []UseDefBranch
 
-func NewUseDefBranch(instr ssa.Instruction, value ssa.Value) UseDefBranch {
-	vinstr, ok := value.(ssa.Instruction)
-	if !ok {
-		panic("The starting node is not an Instruction")
+func NewUseDefBranches(instr ssa.Instruction, value ssa.Value) UseDefBranches {
+	tmpBranch := UseDefBranch{
+		root:   value,
+		fields: []structField{},
+		// NOTE: here we regard the surrounding Instruction of the Value as seen. This avoids that we get this instruction
+		// back when getting the source referrers of the value.
+		seenInstructions: map[ssa.Instruction]struct{}{instr: {}},
+		seenValues:       map[ssa.Value]struct{}{},
 	}
-	return UseDefBranch{
-		instr:            vinstr,
-		fields:           []structField{},
-		seenInstructions: map[ssa.Instruction]struct{}{instr: {}, vinstr: {}},
+
+	refinstrs := tmpBranch.sourceReferrersOfValue(value)
+	if refinstrs == nil {
+		return nil
 	}
+	var branches UseDefBranches
+	for _, refinstr := range *refinstrs {
+		// Since we do not have a starting Instruction (only a starting Value), after we get the referrer instructions,
+		// we will need to check that the referrer instruction of the Value is not the Value itself (only if the Value is an
+		// Instruction at the same time).
+		// This is non-fatal, but makes the final output branches neat.
+		if vintr, ok := value.(ssa.Instruction); ok {
+			if vintr == refinstr {
+				continue
+			}
+		}
+
+		branches = append(branches, tmpBranch.propagate(refinstr))
+	}
+	return branches
+}
+
+// Walk walks the use-def chain in backward for each input branch. In each pass,
+// each branch will move one step backward in the use-def chain, which might either
+// return the branch itself back (means this branch has ended), or return several new
+// branches which diverge because of the Value under used is got "defined" in multiple
+// places (in this case, it is because the structure/sub-structure's members are defined
+// in different places).
+func (branches UseDefBranches) Walk() UseDefBranches {
+	// Check whether we still have any branch to go on iterating.
+	var toContinue bool
+	for _, branch := range branches {
+		if !branch.end {
+			toContinue = true
+		}
+	}
+	if !toContinue {
+		return branches
+	}
+
+	// Iterate the branches.
+	var newBranches UseDefBranches
+	for _, branch := range branches {
+		if branch.end {
+			newBranches = append(newBranches, branch)
+			continue
+		}
+		nextBranches := branch.next()
+		for _, nextBranch := range nextBranches {
+			newBranches = append(newBranches, nextBranch)
+		}
+	}
+
+	return newBranches.Walk()
 }
 
 // next move one step backward in the use-def chain to the next def point and return the new set of use-def branches.
@@ -109,82 +171,62 @@ func (branch UseDefBranch) next() UseDefBranches {
 		return []UseDefBranch{branch}
 	}
 
-	// This is to avoid duplicate referrer instructions occur during iteration.
-	// It may contain duplicates if an instruction has a repeated operand.
-	seenInstructions := map[ssa.Instruction]struct{}{}
-	for k, v := range branch.seenInstructions {
-		seenInstructions[k] = v
-	}
-
 	var nextBranches UseDefBranches
 
 	for _, instr := range *referInstrs {
-		if _, ok := seenInstructions[instr]; ok {
-			continue
-		}
-		seenInstructions[instr] = struct{}{}
-
-		newSeenInstructions := map[ssa.Instruction]struct{}{instr: {}}
-		for k, v := range branch.seenInstructions {
-			newSeenInstructions[k] = v
-		}
-
-		newFields := make([]structField, len(branch.fields))
-		copy(newFields, branch.fields)
-
-		switch instr := instr.(type) {
-		case *ssa.FieldAddr:
-			newFields = append(newFields, structField{
-				index: instr.Field,
-				t:     instr.X.Type(),
-			})
-		}
-		nextBranches = append(nextBranches, UseDefBranch{
-			instr:            instr,
-			fields:           newFields,
-			seenInstructions: newSeenInstructions,
-		})
+		nextBranches = append(nextBranches, branch.propagate(instr))
 	}
 
-	if len(nextBranches) == 0 {
-		branch.end = true
-		return []UseDefBranch{branch}
-	}
 	return nextBranches
 }
 
-// Walk walks the use-def chain in backward for each input branch. In each pass,
-// each branch will move one step backward in the use-def chain, which might either
-// return the branch itself back (means this branch has ended), or return several new
-// branches which diverge because of the Value under used is got "defined" in multiple
-// places (in this case, it is because the structure/sub-structure's members are defined
-// in different places).
-func (branches UseDefBranches) Walk() UseDefBranches {
-	var toContinue bool
-	for _, branch := range branches {
-		if !branch.end {
-			toContinue = true
-		}
+// propagate propagate a new branch from an instruction and an existing branch.
+// If that instruction is a FieldAddr, it will additionally add the field info to the new branch.
+// If that instruction is seen before, then current branch will be returned back with "end" marked.
+func (branch UseDefBranch) propagate(instr ssa.Instruction) UseDefBranch {
+	if branch.end {
+		panic(fmt.Sprintf("%s: ended branch can't propagate new branch", branch))
 	}
 
-	if !toContinue {
-		return branches
+	if _, ok := branch.seenInstructions[instr]; ok {
+		branch.end = true
+		return branch
 	}
 
-	var newBranches UseDefBranches
-	for _, branch := range branches {
-		nextBranches := branch.next()
-		for _, nextBranch := range nextBranches {
-			newBranches = append(newBranches, nextBranch)
-		}
+	newSeenInstructions := map[ssa.Instruction]struct{}{}
+	for k, v := range branch.seenInstructions {
+		newSeenInstructions[k] = v
 	}
 
-	return newBranches.Walk()
+	newSeenValues := map[ssa.Value]struct{}{}
+	for k, v := range branch.seenValues {
+		newSeenValues[k] = v
+	}
+
+	newFields := make([]structField, len(branch.fields))
+	copy(newFields, branch.fields)
+
+	switch instr := instr.(type) {
+	case *ssa.FieldAddr:
+		newFields = append(newFields, structField{
+			index: instr.Field,
+			t:     instr.X.Type(),
+		})
+	}
+	return UseDefBranch{
+		root:             branch.root,
+		instr:            instr,
+		fields:           newFields,
+		seenInstructions: newSeenInstructions,
+		seenValues:       newSeenValues,
+	}
 }
 
 // sourceReferrersOfInstruction return the instructions that defines the used value in the instruction.
 func (branch *UseDefBranch) sourceReferrersOfInstruction(instr ssa.Instruction) *[]ssa.Instruction {
-	// Record the instruction in the seen instruction set.
+	if _, ok := branch.seenInstructions[instr]; ok {
+		return nil
+	}
 	branch.seenInstructions[instr] = struct{}{}
 	switch instr := instr.(type) {
 	case *ssa.Extract:
@@ -217,10 +259,11 @@ func (branch *UseDefBranch) sourceReferrersOfInstruction(instr ssa.Instruction) 
 
 // sourceReferrersOfValue return the instructions that defines the used value in the Value.
 func (branch *UseDefBranch) sourceReferrersOfValue(value ssa.Value) *[]ssa.Instruction {
-	// In case the value is an instruction itself, we will record it in the seen instruction set.
-	if instr, ok := value.(ssa.Instruction); ok {
-		branch.seenInstructions[instr] = struct{}{}
+	if _, ok := branch.seenValues[value]; ok {
+		return nil
 	}
+	branch.seenValues[value] = struct{}{}
+
 	switch value := value.(type) {
 	case *ssa.Alloc:
 		return value.Referrers()
