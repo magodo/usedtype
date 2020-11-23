@@ -1,30 +1,31 @@
-package main
+package usedtype
 
 import (
+	"errors"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
-	"log"
-	"os"
 )
 
-func buildPackages() ([]*packages.Package, []*ssa.Package) {
+// BuildPackages accept the process argument and feed it to the packages.Load() to build
+// both packages.Package and usedtype.Package(s) with a whole program build.
+func BuildPackages(args []string) ([]*packages.Package, []*ssa.Package, error) {
 	cfg := packages.Config{Mode: packages.LoadAllSyntax}
-	pkgs, err := packages.Load(&cfg, os.Args[1:]...)
+	pkgs, err := packages.Load(&cfg, args[1:]...)
 	if err != nil {
-		log.Fatal(err)
+		return nil, nil, err
 	}
 
 	// Stop if any package had errors.
 	// This step is optional; without it, the previous step
 	// will create SSA for only a subset of packages.
 	if packages.PrintErrors(pkgs) > 0 {
-		log.Fatalf("packages contain errors")
+		return nil, nil, errors.New("packages contain errors")
 	}
 
 	// Build SSA for the specified "pkgs" and their dependencies.
 	// The returned ssapkgs is the corresponding SSA Package of the specified "pkgs".
 	prog, ssapkgs := ssautil.AllPackages(pkgs, 0)
 	prog.Build()
-	return pkgs, ssapkgs
+	return pkgs, ssapkgs, nil
 }

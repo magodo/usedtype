@@ -1,27 +1,41 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	myssa "github.com/magodo/usedtype/ssa"
+	myssa "github.com/magodo/usedtype/usedtype"
 	"go/types"
 	"golang.org/x/tools/go/packages"
-	"golang.org/x/tools/go/ssa"
+	"log"
+	"os"
 )
 
-const usage = `usedtype <package>`
+const usage = `usedtype -p <external pkg pattern> <package>`
+
+var pattern = flag.String("p", "", "The regexp pattern for package import path of the external package to scan the struct coverage.")
 
 func main() {
-	pkgs, ssapkgs := buildPackages()
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "%s\n", usage)
+	}
+	flag.Parse()
+	if *pattern == "" {
+		flag.Usage()
+		os.Exit(1)
+	}
+
+	pkgs, ssapkgs, err := myssa.BuildPackages(flag.Args())
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Analyze all the target external packages and get a list of types.Object
-	pattern := "^sdk$"
-	targetStructs := locateExternalPackageStruct(pkgs, pattern, terraformSchemaTypeFilter)
-	//fmt.Println(targetStructs)
+	targetStructs := myssa.FindExternalPackageStruct(pkgs, *pattern, terraformSchemaTypeFilter)
 
-	// Explore the packages under test to see whether there is ssa node whose type matches any target struct.
+	// Explore the packages under test to see whether there is usedtype node whose type matches any target struct.
 	// For each match, we will walk the dominator tree from that node in backward, to record the usage of each
 	// field of the struct.
-	output := findInPackageNodeOfTargetStructType(ssapkgs, targetStructs)
+	output := myssa.FindInPackageNodeOfTargetStructType(ssapkgs, targetStructs)
 	fmt.Println(output)
 
 	// Now we need to recursively backward analyze from each found node, to record all the field accesses.
@@ -29,7 +43,7 @@ func main() {
 		for _, node := range nodes {
 			var branches myssa.UseDefBranches
 			branches = []myssa.UseDefBranch{
-				myssa.NewUseDefBranch(node.instr, node.v),
+				myssa.NewUseDefBranch(node.Instr, node.V),
 			}
 			newbranches := branches.Walk()
 			for _, b := range newbranches {
@@ -81,37 +95,3 @@ func terraformSchemaTypeFilter(epkg *packages.Package, t *types.Struct) bool {
 	return false
 }
 
-type ssaValue struct {
-	instr ssa.Instruction
-	v     ssa.Value
-}
-
-// findInPackageNodeOfTargetStructType find the ssa nodes that are of the same type of the targetStructures, for each ssa package.
-func findInPackageNodeOfTargetStructType(ssapkgs []*ssa.Package, targetStructs structMap) map[namedTypeId][]ssaValue {
-	output := map[namedTypeId][]ssaValue{}
-	for _, pkg := range ssapkgs {
-		var cb myssa.WalkCallback
-		cb = func(instr ssa.Instruction, v ssa.Value) {
-			vt := v.Type()
-			nt, ok := vt.(*types.Named)
-			if !ok {
-				return
-			}
-			st, ok := nt.Underlying().(*types.Struct)
-			if !ok {
-				return
-			}
-			for tid, tv := range targetStructs {
-				if types.Identical(tv, st) {
-					output[tid] = append(output[tid],
-						ssaValue{
-							instr: instr,
-							v:     v,
-						})
-				}
-			}
-		}
-		myssa.WalkInPackage(pkg, cb)
-	}
-	return output
-}

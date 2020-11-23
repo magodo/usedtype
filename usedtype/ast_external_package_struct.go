@@ -1,4 +1,4 @@
-package main
+package usedtype
 
 import (
 	"go/types"
@@ -7,18 +7,18 @@ import (
 )
 
 // The Object.Id() not always guarantees to return a qualified ID for an object.
-type namedTypeId struct {
+type NamedTypeId struct {
 	pkg  *types.Package
 	name string
 }
 
-type structMap map[namedTypeId]*types.Struct
+type StructMap map[NamedTypeId]*types.Struct
 
-type filterFunc func(epkg *packages.Package, t *types.Struct) bool
+type FilterFunc func(epkg *packages.Package, t *types.Struct) bool
 
-func locateExternalPackageStruct(pkgs []*packages.Package, pattern string, filter filterFunc) structMap {
+func FindExternalPackageStruct(pkgs []*packages.Package, pattern string, filter FilterFunc) StructMap {
 	p := regexp.MustCompile(pattern)
-	targetStructs := map[namedTypeId]*types.Struct{}
+	targetStructs := map[NamedTypeId]*types.Struct{}
 	for _, pkg := range pkgs {
 		for epkgName, epkg := range pkg.Imports {
 			if !p.MatchString(epkgName) {
@@ -40,7 +40,7 @@ func locateExternalPackageStruct(pkgs []*packages.Package, pattern string, filte
 					continue
 				}
 
-				id := namedTypeId{
+				id := NamedTypeId{
 					pkg:  obj.Pkg(),
 					name: obj.Name(),
 				}

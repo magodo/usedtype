@@ -1,4 +1,4 @@
-package ssa
+package usedtype
 
 import (
 	"fmt"
@@ -14,7 +14,6 @@ type structField struct {
 }
 
 type structFields []structField
-
 
 func (fields structFields) String() string {
 	var underlyingNamed func(t types.Type) *types.Named
@@ -65,7 +64,7 @@ func (fields structFields) String() string {
 }
 
 type UseDefBranch struct {
-	// instr represents the current instruction in the use-def chain
+	// Instr represents the current instruction in the use-def chain
 	instr ssa.Instruction
 
 	// fields keep any struct field in the use-def chain
@@ -188,6 +187,8 @@ func (branch *UseDefBranch) sourceReferrersOfInstruction(instr ssa.Instruction) 
 	// Record the instruction in the seen instruction set.
 	branch.seenInstructions[instr] = struct{}{}
 	switch instr := instr.(type) {
+	case *ssa.Extract:
+		return branch.sourceReferrersOfValue(instr)
 	case *ssa.UnOp:
 		return branch.sourceReferrersOfValue(instr)
 	case *ssa.FieldAddr:
@@ -196,8 +197,8 @@ func (branch *UseDefBranch) sourceReferrersOfInstruction(instr ssa.Instruction) 
 		return branch.sourceReferrersOfValue(instr)
 	case *ssa.Call:
 		return branch.sourceReferrersOfValue(instr)
-	case *ssa.Store:
-		return branch.sourceReferrersOfValue(instr.Val)
+	case *ssa.MakeMap:
+		return branch.sourceReferrersOfValue(instr)
 	case *ssa.Return:
 		var instrs []ssa.Instruction
 		for _, result := range instr.Results {
@@ -207,8 +208,10 @@ func (branch *UseDefBranch) sourceReferrersOfInstruction(instr ssa.Instruction) 
 			}
 		}
 		return &instrs
+	case *ssa.Store:
+		return branch.sourceReferrersOfValue(instr.Val)
 	default:
-		panic("TODO")
+		panic("TODO: " + instr.String())
 	}
 }
 
@@ -234,6 +237,8 @@ func (branch *UseDefBranch) sourceReferrersOfValue(value ssa.Value) *[]ssa.Instr
 		return &referrers
 	case *ssa.Const:
 		return value.Referrers()
+	case *ssa.Extract:
+		return value.Tuple.Referrers()
 	case *ssa.UnOp:
 		return branch.sourceReferrersOfValue(value.X)
 	case *ssa.FieldAddr:
@@ -265,17 +270,19 @@ func (branch *UseDefBranch) sourceReferrersOfValue(value ssa.Value) *[]ssa.Instr
 				}
 				return &instrs
 			case *ssa.MakeClosure:
-				panic("TODO")
+				panic("TODO:" + value.String())
 			case *ssa.Builtin:
-				panic("TODO")
+				panic("TODO:" + value.String())
 			default:
 				panic("should not reach here")
 			}
 		} else {
 			// invoke mode (dynamic dispatch on interface)
-			panic("TODO")
+			panic("TODO:" + value.String())
 		}
+	case *ssa.MakeMap:
+		return nil
 	default:
-		panic("TODO")
+		panic("TODO:" + value.String())
 	}
 }
