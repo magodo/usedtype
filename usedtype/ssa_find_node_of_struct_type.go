@@ -24,19 +24,18 @@ func FindInPackageDefNodeOfTargetStructType(ssapkgs []*ssa.Package, targetStruct
 			// Since both local and global variable in SSA is a reserved memory for the target type, so the node
 			// type is always a pointer.
 			vt := v.Type()
-			pt, ok := vt.(*types.Pointer)
-			if !ok {
-				return
+
+			for pt, ok := vt.(*types.Pointer); ok; {
+				vt = pt.Elem()
+				pt, ok = vt.(*types.Pointer)
 			}
 
-			// It is possible that defines multiple pointer level for the target type
-			for e, ok := pt.Elem().(*types.Pointer); ok; pt = e {}
-
-			nt, ok := pt.Elem().(*types.Named)
+			nt, ok := vt.(*types.Named)
 			if !ok {
 				return
 			}
 			st, ok := nt.Underlying().(*types.Struct)
+
 			if !ok {
 				return
 			}

@@ -5,7 +5,6 @@ import (
 	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/ssa"
-	"log"
 	"reflect"
 	"strings"
 )
@@ -140,11 +139,11 @@ func (branches DefUseBranches) Walk() DefUseBranches {
 
 	// DEBUG
 
-	var debugMsgs = []string{}
-	for _, b := range branches {
-		debugMsgs = append(debugMsgs, b.String())
-	}
-	log.Printf("Walking on: \n%s", strings.Join(debugMsgs, "\n"))
+	//var debugMsgs = []string{}
+	//for _, b := range branches {
+	//	debugMsgs = append(debugMsgs, b.String())
+	//}
+	//log.Printf("Walking on: \n%s", strings.Join(debugMsgs, "\n"))
 
 	// Check whether we still have any branch to go on iterating.
 	var toContinue bool
@@ -307,10 +306,12 @@ func (branch *DefUseBranch) sourceReferrersOfValue(value ssa.Value) *[]ssa.Instr
 
 	switch value := value.(type) {
 	case *ssa.Alloc:
-		cnt := 1
-		pt := value.Type().(*types.Pointer)
-		for e, ok := pt.Elem().(*types.Pointer); ok; pt = e {
+		vt := value.Type()
+		cnt := 0
+		for pt, ok := vt.(*types.Pointer); ok; {
 			cnt++
+			vt = pt.Elem()
+			pt, ok = vt.(*types.Pointer)
 		}
 		branch.refCount += cnt
 		return value.Referrers()
@@ -348,14 +349,13 @@ func (branch *DefUseBranch) sourceReferrersOfValue(value ssa.Value) *[]ssa.Instr
 	case *ssa.FieldAddr:
 		vt := value.X.Type().(*types.Pointer).Elem().Underlying().(*types.Struct).Field(value.Field).Type()
 		cnt := 1
-		if pt, ok := vt.(*types.Pointer); ok {
+		for pt, ok := vt.(*types.Pointer); ok; {
 			cnt++
-			for e, ok := pt.Elem().(*types.Pointer); ok; pt = e {
-				cnt++
-			}
+			vt = pt.Elem()
+			pt, ok = vt.(*types.Pointer)
 		}
-		branch.refCount = cnt
 
+		branch.refCount = cnt
 		return value.Referrers()
 	case *ssa.IndexAddr:
 		// TODO: do we have to remember the fromValue to check whether the X or Index is used?
@@ -409,10 +409,12 @@ func (branch *DefUseBranch) sourceReferrersOfValue(value ssa.Value) *[]ssa.Instr
 	case *ssa.Lookup:
 		return branch.sourceReferrersOfValue(value.X)
 	case *ssa.Global:
-		cnt := 1
-		pt := value.Type().(*types.Pointer)
-		for e, ok := pt.Elem().(*types.Pointer); ok; pt = e {
+		vt := value.Type()
+		cnt := 0
+		for pt, ok := vt.(*types.Pointer); ok; {
 			cnt++
+			vt = pt.Elem()
+			pt, ok = vt.(*types.Pointer)
 		}
 		branch.refCount += cnt
 		return value.Referrers()

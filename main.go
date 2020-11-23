@@ -36,7 +36,14 @@ func main() {
 	// For each match, we will walk the dominator tree from that node in backward, to record the usage of each
 	// field of the struct.
 	output := myssa.FindInPackageDefNodeOfTargetStructType(ssapkgs, targetStructs)
-	//fmt.Println(output)
+
+	// Debug output each def node's position.
+	for tid, values := range output {
+		fmt.Printf("%q (%q)\n", tid.TypeName, tid.Pkg.PkgPath)
+		for _, value := range values {
+			fmt.Printf("\t%q\n", tid.Pkg.Fset.Position(value.Pos()))
+		}
+	}
 
 	// Now we need to recursively backward analyze from each found node, to record all the field accesses.
 	for tid, values := range output {

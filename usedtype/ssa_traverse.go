@@ -42,6 +42,10 @@ func (t *Traversal) WalkInPackage(pkg *ssa.Package, cb WalkCallback) {
 			*ssa.NamedConst:
 			// nothing to do, since it will not appear any Value of target type
 		case *ssa.Global:
+			if _, ok := t.seen.values[m]; ok {
+				return
+			}
+			t.seen.values[m] = struct{}{}
 			cb(m)
 		case *ssa.Function:
 			t.walkFunction(pkg, m, cb)
@@ -83,6 +87,7 @@ func (t *Traversal) walkInstructions(pkg *ssa.Package, fn *ssa.Function, cb Walk
 
 			// traverse the operands in instructions
 			ops := instr.Operands(nil)
+
 			for _, arg := range ops {
 				t.walkValue(pkg, *arg, cb)
 			}
@@ -105,13 +110,13 @@ func (t *Traversal) walkValue(pkg *ssa.Package, v ssa.Value, cb WalkCallback) {
 		switch v := v.(type) {
 		case *ssa.Function:
 			t.walkFunction(pkg, v, cb)
+			return
 		}
 		cb(v)
 		return
 	}
 
-	var applyPhi func(v *ssa.Phi)
-	applyPhi = func(v *ssa.Phi) {
+	applyPhi := func(v *ssa.Phi) {
 		for _, e := range v.Edges {
 			t.walkValue(pkg, e, cb)
 		}
