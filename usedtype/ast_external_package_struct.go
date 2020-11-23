@@ -8,8 +8,8 @@ import (
 
 // The Object.Id() not always guarantees to return a qualified ID for an object.
 type NamedTypeId struct {
-	pkg  *types.Package
-	name string
+	Pkg      *packages.Package
+	TypeName string
 }
 
 type StructMap map[NamedTypeId]*types.Struct
@@ -20,8 +20,8 @@ func FindExternalPackageStruct(pkgs []*packages.Package, pattern string, filter 
 	p := regexp.MustCompile(pattern)
 	targetStructs := map[NamedTypeId]*types.Struct{}
 	for _, pkg := range pkgs {
-		for epkgName, epkg := range pkg.Imports {
-			if !p.MatchString(epkgName) {
+		for epkgImportPath, epkg := range pkg.Imports {
+			if !p.MatchString(epkgImportPath) {
 				continue
 			}
 			for _, obj := range epkg.TypesInfo.Defs {
@@ -41,8 +41,8 @@ func FindExternalPackageStruct(pkgs []*packages.Package, pattern string, filter 
 				}
 
 				id := NamedTypeId{
-					pkg:  obj.Pkg(),
-					name: obj.Name(),
+					Pkg:      epkg,
+					TypeName: obj.Name(),
 				}
 				targetStructs[id] = t
 			}

@@ -2,6 +2,7 @@ package usedtype
 
 import (
 	"fmt"
+	"go/token"
 	"go/types"
 	"golang.org/x/tools/go/ssa"
 	"reflect"
@@ -58,9 +59,23 @@ func (fields structFields) String() string {
 				fieldName = strct.Field(field.index).Name()
 			}
 		}
+
+		// This field is ignored in json request
+		if fieldName == "-" {
+			continue
+		}
 		fieldStrs = append(fieldStrs, fieldName)
 	}
 	return strings.Join(fieldStrs, ".")
+}
+
+type fromValue struct {
+	value ssa.Value
+
+	// refCount is used to keep track how many times the value is referenced (&).
+	// This will be added each time it is referenced (&), and will be reduced each time
+	// it is de-referenced (*).
+	refCount int
 }
 
 type UseDefBranch struct {
@@ -81,27 +96,25 @@ type UseDefBranch struct {
 
 	// end means this use-def chain reaches the end
 	end bool
-}
 
-func (branch UseDefBranch) String() string {
-	instr := ""
-	if branch.instr != nil {
-		instr = branch.instr.String()
-	}
-	fields := branch.fields.String()
-	return fmt.Sprintf("%s [%s]", instr, fields)
+	fromValue fromValue
+
+	// for debug purpose only
+	fset *token.FileSet
 }
 
 type UseDefBranches []UseDefBranch
 
-func NewUseDefBranches(instr ssa.Instruction, value ssa.Value) UseDefBranches {
+func NewUseDefBranches(instr ssa.Instruction, value ssa.Value, fset *token.FileSet) UseDefBranches {
 	tmpBranch := UseDefBranch{
-		root:   value,
-		fields: []structField{},
+		root:      value,
+		fromValue: fromValue{value, 0},
+		fields:    []structField{},
 		// NOTE: here we regard the surrounding Instruction of the Value as seen. This avoids that we get this instruction
 		// back when getting the source referrers of the value.
 		seenInstructions: map[ssa.Instruction]struct{}{instr: {}},
 		seenValues:       map[ssa.Value]struct{}{},
+		fset:             fset,
 	}
 
 	refinstrs := tmpBranch.sourceReferrersOfValue(value)
@@ -132,6 +145,15 @@ func NewUseDefBranches(instr ssa.Instruction, value ssa.Value) UseDefBranches {
 // places (in this case, it is because the structure/sub-structure's members are defined
 // in different places).
 func (branches UseDefBranches) Walk() UseDefBranches {
+
+	// DEBUG
+
+	//var debugMsgs = []string{}
+	//for _, b := range branches {
+	//	debugMsgs = append(debugMsgs, b.String())
+	//}
+	//log.Printf("Walking on: \n%s", strings.Join(debugMsgs, "\n"))
+
 	// Check whether we still have any branch to go on iterating.
 	var toContinue bool
 	for _, branch := range branches {
@@ -213,12 +235,15 @@ func (branch UseDefBranch) propagate(instr ssa.Instruction) UseDefBranch {
 			t:     instr.X.Type(),
 		})
 	}
+
 	return UseDefBranch{
 		root:             branch.root,
+		fromValue:        branch.fromValue,
 		instr:            instr,
 		fields:           newFields,
 		seenInstructions: newSeenInstructions,
 		seenValues:       newSeenValues,
+		fset:             branch.fset,
 	}
 }
 
@@ -235,11 +260,31 @@ func (branch *UseDefBranch) sourceReferrersOfInstruction(instr ssa.Instruction) 
 		return branch.sourceReferrersOfValue(instr)
 	case *ssa.FieldAddr:
 		return branch.sourceReferrersOfValue(instr)
+	case *ssa.IndexAddr:
+		return branch.sourceReferrersOfValue(instr)
 	case *ssa.Phi:
 		return branch.sourceReferrersOfValue(instr)
 	case *ssa.Call:
 		return branch.sourceReferrersOfValue(instr)
 	case *ssa.MakeMap:
+		return branch.sourceReferrersOfValue(instr)
+	case *ssa.TypeAssert:
+		return branch.sourceReferrersOfValue(instr)
+	case *ssa.ChangeType:
+		return branch.sourceReferrersOfValue(instr)
+	case *ssa.Convert:
+		return branch.sourceReferrersOfValue(instr)
+	case *ssa.Slice:
+		return branch.sourceReferrersOfValue(instr)
+	case *ssa.MakeSlice:
+		return branch.sourceReferrersOfValue(instr)
+	case *ssa.MakeChan:
+		return branch.sourceReferrersOfValue(instr)
+	case *ssa.MakeInterface:
+		return branch.sourceReferrersOfValue(instr)
+	case *ssa.MakeClosure:
+		return branch.sourceReferrersOfValue(instr)
+	case *ssa.Lookup:
 		return branch.sourceReferrersOfValue(instr)
 	case *ssa.Return:
 		var instrs []ssa.Instruction
@@ -251,6 +296,10 @@ func (branch *UseDefBranch) sourceReferrersOfInstruction(instr ssa.Instruction) 
 		}
 		return &instrs
 	case *ssa.Store:
+		branch.fromValue = fromValue{
+			value:    instr.Val,
+			refCount: branch.fromValue.refCount - 1,
+		}
 		return branch.sourceReferrersOfValue(instr.Val)
 	default:
 		panic("TODO: " + instr.String())
@@ -266,8 +315,12 @@ func (branch *UseDefBranch) sourceReferrersOfValue(value ssa.Value) *[]ssa.Instr
 
 	switch value := value.(type) {
 	case *ssa.Alloc:
+		branch.fromValue.value = value
+		branch.fromValue.refCount++
 		return value.Referrers()
 	case *ssa.BinOp:
+		branch.fromValue.value = value
+
 		var referrers []ssa.Instruction
 		xref := branch.sourceReferrersOfValue(value.X)
 		if xref != nil {
@@ -278,17 +331,55 @@ func (branch *UseDefBranch) sourceReferrersOfValue(value ssa.Value) *[]ssa.Instr
 			referrers = append(referrers, *yref...)
 		}
 		return &referrers
-	case *ssa.Const:
-		return value.Referrers()
 	case *ssa.Extract:
-		return value.Tuple.Referrers()
+		branch.fromValue.value = value
+		return branch.sourceReferrersOfValue(value.Tuple)
 	case *ssa.UnOp:
+		switch value.Op {
+		case token.NOT,
+			token.SUB,
+			token.ARROW,
+			token.XOR:
+			branch.fromValue.value = value
+			return branch.sourceReferrersOfValue(value.X)
+		case token.MUL:
+			// In below expression:
+			// Y = *X
+
+			// In case the from value is the UnOp Value itself, we expect data flow: Y <- X.
+			if branch.fromValue.value == value {
+				branch.fromValue.value = value
+				branch.fromValue.refCount--
+				return branch.sourceReferrersOfValue(value.X)
+			}
+
+			// Otherwise, it means from value is X, then we expect data flow: Y->X.
+
+			// refCount is > 0 means the X is the address of some Value, so Y can plays a role
+			// as value source (def).
+			if branch.fromValue.refCount > 0 {
+				branch.fromValue.value = value
+				branch.fromValue.refCount--
+				return value.Referrers()
+			}
+
+			// refCount is 0 means the X is not an address, means the data flow ends here (Y will be used in other places though, that should
+			// be handled in other branches / passes).
+			return nil
+		}
 		return branch.sourceReferrersOfValue(value.X)
 	case *ssa.FieldAddr:
+		branch.fromValue.value = value
+		branch.fromValue.refCount++
+		return value.Referrers()
+	case *ssa.IndexAddr:
+		branch.fromValue.value = value
+		branch.fromValue.refCount++
 		return value.Referrers()
 	case *ssa.Phi:
 		var referrers []ssa.Instruction
 		for _, edge := range value.Edges {
+			branch.fromValue.value = edge
 			srcreferrers := branch.sourceReferrersOfValue(edge)
 			if srcreferrers != nil {
 				referrers = append(referrers, *srcreferrers...)
@@ -296,8 +387,13 @@ func (branch *UseDefBranch) sourceReferrersOfValue(value ssa.Value) *[]ssa.Instr
 		}
 		return &referrers
 	case *ssa.Call:
+		branch.fromValue.value = value
 		callcomm := value.Common()
-		if callcomm.Method == nil {
+		if callcomm.IsInvoke() {
+			// invoke mode (dynamic dispatch on interface)
+			// TODO: figure out how to get the concrete Call instead of the interface abstract method
+			return nil
+		} else {
 			// call mode
 			switch v := callcomm.Value.(type) {
 			case *ssa.Function:
@@ -315,17 +411,53 @@ func (branch *UseDefBranch) sourceReferrersOfValue(value ssa.Value) *[]ssa.Instr
 			case *ssa.MakeClosure:
 				panic("TODO:" + value.String())
 			case *ssa.Builtin:
-				panic("TODO:" + value.String())
+				// TODO: There is no way to get the operands of builtin-function easily, so we are returning nil here for now.
+				return nil
 			default:
 				panic("should not reach here")
 			}
-		} else {
-			// invoke mode (dynamic dispatch on interface)
-			panic("TODO:" + value.String())
 		}
+	case *ssa.Parameter:
+		return nil
+	case *ssa.TypeAssert:
+		return nil
+	case *ssa.ChangeType:
+		return nil
+	case *ssa.Convert:
+		branch.fromValue.value = value
+		return branch.sourceReferrersOfValue(value.X)
+	case *ssa.Slice:
+		branch.fromValue.value = value
+		return branch.sourceReferrersOfValue(value.X)
 	case *ssa.MakeMap:
 		return nil
+	case *ssa.MakeSlice:
+		return nil
+	case *ssa.MakeChan:
+		return nil
+	case *ssa.MakeInterface:
+		return nil
+	case *ssa.MakeClosure:
+		return nil
+	case *ssa.FreeVar:
+		return nil
+	case *ssa.Const:
+		return nil
+	case *ssa.Lookup:
+		branch.fromValue.value = value
+		return branch.sourceReferrersOfValue(value.X)
 	default:
 		panic("TODO:" + value.String())
 	}
+}
+
+func (branch UseDefBranch) String() string {
+	instr := ""
+	pos := "-"
+	if branch.instr != nil {
+		instr = branch.instr.String()
+		pos = branch.fset.Position(branch.instr.Pos()).String()
+	}
+	fields := branch.fields.String()
+	return fmt.Sprintf("%s (%s) [%s]", instr, pos, fields)
 }

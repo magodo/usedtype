@@ -39,10 +39,10 @@ func main() {
 	//fmt.Println(output)
 
 	// Now we need to recursively backward analyze from each found node, to record all the field accesses.
-	for _, nodes := range output {
+	for tid, nodes := range output {
 		for _, node := range nodes {
 			var branches myssa.UseDefBranches
-			branches = myssa.NewUseDefBranches(node.Instr, node.V)
+			branches = myssa.NewUseDefBranches(node.Instr, node.V, tid.Pkg.Fset)
 			newbranches := branches.Walk()
 			for _, b := range newbranches {
 				fmt.Println(b)
