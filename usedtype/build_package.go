@@ -2,6 +2,7 @@ package usedtype
 
 import (
 	"errors"
+
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
@@ -9,8 +10,8 @@ import (
 
 // BuildPackages accept the process argument and feed it to the packages.Load() to build
 // both packages.Package and usedtype.Package(s) with a whole program build.
-func BuildPackages(args []string) ([]*packages.Package, []*ssa.Package, error) {
-	cfg := packages.Config{Mode: packages.LoadAllSyntax}
+func BuildPackages(dir string, args []string) ([]*packages.Package, []*ssa.Package, error) {
+	cfg := packages.Config{Dir: dir, Mode: packages.LoadAllSyntax}
 	pkgs, err := packages.Load(&cfg, args[1:]...)
 	if err != nil {
 		return nil, nil, err

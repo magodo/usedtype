@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"go/token"
 	"go/types"
-	"golang.org/x/tools/go/ssa"
 	"reflect"
 	"strings"
+
+	"golang.org/x/tools/go/ssa"
 )
 
 type structField struct {
@@ -259,8 +260,10 @@ func (branch DefUseBranch) propagateOnInstr(instr ssa.Instruction) DefUseBranche
 		}
 		return newBranches
 	case *ssa.Store:
-		// In a def-use chain, when the referrer is Store instruction, the used value is always the Addr.
-		// TODO: need proof
+		fromValue := branch.valueChain[len(branch.valueChain)-1]
+		if fromValue == instr.Val {
+			panic("In a def-use chain, when the referrer is Store instruction, the used value is always the Addr. Seems no?")
+		}
 		branch.refCount--
 		return branch.propagateOnValue(instr.Val)
 	default:
@@ -326,7 +329,11 @@ func (branch DefUseBranch) propagateOnValue(value ssa.Value) DefUseBranches {
 		branch.refCount = cnt
 		return branch.propagateOnReferrers(value.Referrers())
 	case *ssa.IndexAddr:
-		// TODO: do we have to remember the fromValue to check whether the X or Index is used?
+		fromValue := branch.valueChain[len(branch.valueChain)-1]
+		if fromValue == value.Index {
+			branch.end = true
+			return []DefUseBranch{branch}
+		}
 		branch.refCount++
 		return branch.propagateOnValue(value.X)
 	case *ssa.Phi:
@@ -407,5 +414,5 @@ func (branch DefUseBranch) String() string {
 	}
 	fields := branch.fields.String()
 	return fmt.Sprintf(`%q
-	%s`, fields, strings.Join(valuePos, "\n\t"))
+	%s`, fields, strings.Join(valuePos, "\n\t")) + "\n"
 }

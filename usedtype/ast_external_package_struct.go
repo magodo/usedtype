@@ -1,9 +1,14 @@
 package usedtype
 
 import (
+	"fmt"
 	"go/types"
-	"golang.org/x/tools/go/packages"
 	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+
+	"golang.org/x/tools/go/packages"
 )
 
 // The Object.Id() not always guarantees to return a qualified ID for an object.
@@ -12,7 +17,32 @@ type NamedTypeId struct {
 	TypeName string
 }
 
+func (id NamedTypeId) String() string {
+	return fmt.Sprintf("%s (%s)", id.TypeName, id.Pkg.PkgPath)
+}
+
 type StructMap map[NamedTypeId]*types.Struct
+
+func (m StructMap) String() string {
+	idstrings := []string{}
+	ids := []NamedTypeId{}
+	i := 0
+	for k := range m {
+		idstrings = append(idstrings, fmt.Sprintf("%s:%s:%d", k.Pkg.PkgPath, k.TypeName, i))
+		ids = append(ids, k)
+		i++
+	}
+	sort.Strings(idstrings)
+
+	output := []string{}
+	for _, idstr := range idstrings {
+		parts := strings.Split(idstr, ":")
+		idx, _ := strconv.Atoi(parts[2])
+		id := ids[idx]
+		output = append(output, fmt.Sprintf("%s: %s\n", id, m[id]))
+	}
+	return strings.Join(output, "")
+}
 
 type FilterFunc func(epkg *packages.Package, t *types.Struct) bool
 

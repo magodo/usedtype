@@ -3,11 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
-	myssa "github.com/magodo/usedtype/usedtype"
 	"go/types"
-	"golang.org/x/tools/go/packages"
 	"log"
 	"os"
+
+	"github.com/magodo/usedtype/usedtype"
+	"golang.org/x/tools/go/packages"
 )
 
 const usage = `usedtype -p <external pkg pattern> <package>`
@@ -24,32 +25,29 @@ func main() {
 		os.Exit(1)
 	}
 
-	pkgs, ssapkgs, err := myssa.BuildPackages(flag.Args())
+	pkgs, ssapkgs, err := usedtype.BuildPackages(".", flag.Args())
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// Analyze all the target external packages and get a list of types.Object
-	targetStructs := myssa.FindExternalPackageStruct(pkgs, *pattern, terraformSchemaTypeFilter)
+	targetStructs := usedtype.FindExternalPackageStruct(pkgs, *pattern, terraformSchemaTypeFilter)
+
+	fmt.Println(targetStructs)
 
 	// Explore the packages under test to see whether there is SSA node whose type matches any target struct.
 	// For each match, we will walk the dominator tree from that node in backward, to record the usage of each
 	// field of the struct.
-	output := myssa.FindInPackageDefNodeOfTargetStructType(ssapkgs, targetStructs)
+	output := usedtype.FindInPackageDefNodeOfTargetStructType(ssapkgs, targetStructs)
 
 	// Debug output each def node's position.
-	for tid, values := range output {
-		fmt.Printf("%q (%q)\n", tid.TypeName, tid.Pkg.PkgPath)
-		for _, value := range values {
-			fmt.Printf("\t%q\n", tid.Pkg.Fset.Position(value.Pos()))
-		}
-	}
+	fmt.Println(output)
 
 	// Now we need to recursively backward analyze from each found node, to record all the field accesses.
 	for tid, values := range output {
 		for _, value := range values {
-			var branches myssa.DefUseBranches
-			branches = myssa.NewDefUseBranches(value, tid.Pkg.Fset)
+			var branches usedtype.DefUseBranches
+			branches = usedtype.NewDefUseBranches(value, tid.Pkg.Fset)
 			newbranches := branches.Walk()
 			for _, b := range newbranches {
 				fmt.Println(b)
