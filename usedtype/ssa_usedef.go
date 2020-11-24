@@ -70,13 +70,13 @@ func (fields structFields) String() string {
 }
 
 type DefUseBranch struct {
-	// root is the starting Value of this branch
-	root ssa.Value
-
 	// refCount is used to keep track how many times current Value is referenced (&).
 	// This will be added each time it is referenced (&), and will be reduced each time
 	// it is de-referenced (*).
 	refCount int
+
+	// valueChain keep track of the def-use value chain starting from the def value.
+	valueChain []ssa.Value
 
 	// Instr represents the current instruction in the def-use chain
 	instr ssa.Instruction
@@ -110,23 +110,15 @@ func NewDefUseBranches(value ssa.Value, fset *token.FileSet) DefUseBranches {
 	}
 
 	tmpBranch := DefUseBranch{
-		root:             value,
 		refCount:         0,
+		valueChain:       []ssa.Value{},
 		fields:           []structField{},
 		seenInstructions: map[ssa.Instruction]struct{}{},
 		seenValues:       map[ssa.Value]struct{}{},
 		fset:             fset,
 	}
 
-	refinstrs := tmpBranch.sourceReferrersOfValue(value)
-	if refinstrs == nil {
-		return nil
-	}
-	var branches DefUseBranches
-	for _, refinstr := range *refinstrs {
-		branches = append(branches, tmpBranch.propagate(refinstr))
-	}
-	return branches
+	return tmpBranch.propagateOnValue(value)
 }
 
 // Walk walks the def-use chain in backward for each input branch. In each pass,
@@ -159,53 +151,19 @@ func (branches DefUseBranches) Walk() DefUseBranches {
 	// Iterate the branches.
 	var newBranches DefUseBranches
 	for _, branch := range branches {
-		if branch.end {
-			newBranches = append(newBranches, branch)
-			continue
-		}
-		// get the next branch set by follow the def-use chain
-		nextBranches := branch.next()
-		for _, nextBranch := range nextBranches {
-			newBranches = append(newBranches, nextBranch)
-		}
+		nextBranches := branch.propagateOnInstr(branch.instr)
+		newBranches = append(newBranches, nextBranches...)
 	}
 
 	return newBranches.Walk()
 }
 
-// next move one step forward in the def-use chain to the next def point and return the new set of def-use branches.
-// If there is no new def point (referrer) in the chain, the current branch is returned with the "end" set to true.
-func (branch DefUseBranch) next() DefUseBranches {
-	referInstrs := branch.sourceReferrersOfInstruction(branch.instr)
+func (branch DefUseBranch) copy() DefUseBranch {
+	newValueChain := make([]ssa.Value, len(branch.valueChain))
+	copy(newValueChain, branch.valueChain)
 
-	// In case current instruction has no referrer, it means current def-use branch reaches to the end.
-	// This is possible in cases like "Const" instruction.
-	if referInstrs == nil {
-		branch.end = true
-		return []DefUseBranch{branch}
-	}
-
-	var nextBranches DefUseBranches
-
-	for _, instr := range *referInstrs {
-		nextBranches = append(nextBranches, branch.propagate(instr))
-	}
-
-	return nextBranches
-}
-
-// propagate propagate a new branch from an instruction and an existing branch.
-// If that instruction is a FieldAddr, it will additionally add the field info to the new branch.
-// If that instruction is seen before, then current branch will be returned back with "end" marked.
-func (branch DefUseBranch) propagate(instr ssa.Instruction) DefUseBranch {
-	if branch.end {
-		panic(fmt.Sprintf("%s: ended branch can't propagate new branch", branch))
-	}
-
-	if _, ok := branch.seenInstructions[instr]; ok {
-		branch.end = true
-		return branch
-	}
+	newFields := make([]structField, len(branch.fields))
+	copy(newFields, branch.fields)
 
 	newSeenInstructions := map[ssa.Instruction]struct{}{}
 	for k, v := range branch.seenInstructions {
@@ -217,21 +175,9 @@ func (branch DefUseBranch) propagate(instr ssa.Instruction) DefUseBranch {
 		newSeenValues[k] = v
 	}
 
-	newFields := make([]structField, len(branch.fields))
-	copy(newFields, branch.fields)
-
-	switch instr := instr.(type) {
-	case *ssa.FieldAddr:
-		newFields = append(newFields, structField{
-			index: instr.Field,
-			t:     instr.X.Type(),
-		})
-	}
-
 	return DefUseBranch{
-		root:             branch.root,
+		valueChain:       newValueChain,
 		refCount:         branch.refCount,
-		instr:            instr,
 		fields:           newFields,
 		seenInstructions: newSeenInstructions,
 		seenValues:       newSeenValues,
@@ -239,69 +185,96 @@ func (branch DefUseBranch) propagate(instr ssa.Instruction) DefUseBranch {
 	}
 }
 
-// sourceReferrersOfInstruction return the instructions that defines the used value in the instruction.
-func (branch *DefUseBranch) sourceReferrersOfInstruction(instr ssa.Instruction) *[]ssa.Instruction {
+func (branch DefUseBranch) propagateOnReferrers(referrers *[]ssa.Instruction) DefUseBranches {
+	var newBranches []DefUseBranch
+	if referrers == nil {
+		branch.end = true
+		newBranches = []DefUseBranch{branch}
+		return newBranches
+	}
+
+	for _, instr := range *referrers {
+		b := branch.copy()
+		b.instr = instr
+
+		switch instr := instr.(type) {
+		case *ssa.FieldAddr:
+			b.fields = append(b.fields,
+				structField{
+					index: instr.Field,
+					t:     instr.X.Type(),
+				})
+		}
+
+		newBranches = append(newBranches, b)
+	}
+	return newBranches
+}
+
+// propagateOnInstr return the instructions that defines the used value in the instruction.
+func (branch DefUseBranch) propagateOnInstr(instr ssa.Instruction) DefUseBranches {
 	if _, ok := branch.seenInstructions[instr]; ok {
-		return nil
+		branch.end = true
+		return []DefUseBranch{branch}
 	}
 	branch.seenInstructions[instr] = struct{}{}
 	switch instr := instr.(type) {
 	case *ssa.Extract:
-		return branch.sourceReferrersOfValue(instr)
+		return branch.propagateOnValue(instr)
 	case *ssa.UnOp:
-		return branch.sourceReferrersOfValue(instr)
+		return branch.propagateOnValue(instr)
 	case *ssa.FieldAddr:
-		return branch.sourceReferrersOfValue(instr)
+		return branch.propagateOnValue(instr)
 	case *ssa.IndexAddr:
-		return branch.sourceReferrersOfValue(instr)
+		return branch.propagateOnValue(instr)
 	case *ssa.Phi:
-		return branch.sourceReferrersOfValue(instr)
+		return branch.propagateOnValue(instr)
 	case *ssa.Call:
-		return branch.sourceReferrersOfValue(instr)
+		return branch.propagateOnValue(instr)
 	case *ssa.MakeMap:
-		return branch.sourceReferrersOfValue(instr)
+		return branch.propagateOnValue(instr)
 	case *ssa.TypeAssert:
-		return branch.sourceReferrersOfValue(instr)
+		return branch.propagateOnValue(instr)
 	case *ssa.ChangeType:
-		return branch.sourceReferrersOfValue(instr)
+		return branch.propagateOnValue(instr)
 	case *ssa.Convert:
-		return branch.sourceReferrersOfValue(instr)
+		return branch.propagateOnValue(instr)
 	case *ssa.Slice:
-		return branch.sourceReferrersOfValue(instr)
+		return branch.propagateOnValue(instr)
 	case *ssa.MakeSlice:
-		return branch.sourceReferrersOfValue(instr)
+		return branch.propagateOnValue(instr)
 	case *ssa.MakeChan:
-		return branch.sourceReferrersOfValue(instr)
+		return branch.propagateOnValue(instr)
 	case *ssa.MakeInterface:
-		return branch.sourceReferrersOfValue(instr)
+		return branch.propagateOnValue(instr)
 	case *ssa.MakeClosure:
-		return branch.sourceReferrersOfValue(instr)
+		return branch.propagateOnValue(instr)
 	case *ssa.Lookup:
-		return branch.sourceReferrersOfValue(instr)
+		return branch.propagateOnValue(instr)
 	case *ssa.Return:
-		var instrs []ssa.Instruction
+		var newBranches []DefUseBranch
 		for _, result := range instr.Results {
-			srcinstrs := branch.sourceReferrersOfValue(result)
-			if srcinstrs != nil {
-				instrs = append(instrs, *srcinstrs...)
-			}
+			branches := branch.propagateOnValue(result)
+			newBranches = append(newBranches, branches...)
 		}
-		return &instrs
+		return newBranches
 	case *ssa.Store:
 		// In a def-use chain, when the referrer is Store instruction, the used value is always the Addr.
 		// TODO: need proof
 		branch.refCount--
-		return branch.sourceReferrersOfValue(instr.Val)
+		return branch.propagateOnValue(instr.Val)
 	default:
 		panic("TODO: " + instr.String())
 	}
 }
 
-// sourceReferrersOfValue return the instructions that defines the used value in the Value.
-func (branch *DefUseBranch) sourceReferrersOfValue(value ssa.Value) *[]ssa.Instruction {
+// propagateOnValue return the instructions that defines the used value in the Value.
+func (branch DefUseBranch) propagateOnValue(value ssa.Value) DefUseBranches {
 	if _, ok := branch.seenValues[value]; ok {
-		return nil
+		branch.end = true
+		return []DefUseBranch{branch}
 	}
+	branch.valueChain = append(branch.valueChain, value)
 	branch.seenValues[value] = struct{}{}
 
 	switch value := value.(type) {
@@ -314,35 +287,30 @@ func (branch *DefUseBranch) sourceReferrersOfValue(value ssa.Value) *[]ssa.Instr
 			pt, ok = vt.(*types.Pointer)
 		}
 		branch.refCount += cnt
-		return value.Referrers()
+		return branch.propagateOnReferrers(value.Referrers())
+
 	case *ssa.BinOp:
-		var referrers []ssa.Instruction
-		xref := branch.sourceReferrersOfValue(value.X)
-		if xref != nil {
-			referrers = append(referrers, *xref...)
-		}
-		yref := branch.sourceReferrersOfValue(value.Y)
-		if yref != nil {
-			referrers = append(referrers, *yref...)
-		}
-		return &referrers
+		xBranches := branch.propagateOnValue(value.X)
+		yBranches := branch.propagateOnValue(value.Y)
+		return append(xBranches, yBranches...)
 	case *ssa.Extract:
-		return branch.sourceReferrersOfValue(value.Tuple)
+		return branch.propagateOnValue(value.Tuple)
 	case *ssa.UnOp:
 		switch value.Op {
 		case token.NOT,
 			token.SUB,
 			token.ARROW,
 			token.XOR:
-			return branch.sourceReferrersOfValue(value.X)
+			return branch.propagateOnValue(value.X)
 		case token.MUL:
 			branch.refCount--
 			// refCount reaches 0 means this UnOp pass the Value to the left operand, which no longer continue the def-use chain from
 			// the original owner.
 			if branch.refCount == 0 {
-				return nil
+				branch.end = true
+				return []DefUseBranch{branch}
 			}
-			return value.Referrers()
+			return branch.propagateOnReferrers(value.Referrers())
 		default:
 			panic("won't reach here")
 		}
@@ -356,42 +324,39 @@ func (branch *DefUseBranch) sourceReferrersOfValue(value ssa.Value) *[]ssa.Instr
 		}
 
 		branch.refCount = cnt
-		return value.Referrers()
+		return branch.propagateOnReferrers(value.Referrers())
 	case *ssa.IndexAddr:
 		// TODO: do we have to remember the fromValue to check whether the X or Index is used?
 		branch.refCount++
-		return value.X.Referrers()
+		return branch.propagateOnValue(value.X)
 	case *ssa.Phi:
-		var referrers []ssa.Instruction
+		var newBranches []DefUseBranch
 		for _, edge := range value.Edges {
-			srcreferrers := branch.sourceReferrersOfValue(edge)
-			if srcreferrers != nil {
-				referrers = append(referrers, *srcreferrers...)
-			}
+			branches := branch.propagateOnValue(edge)
+			newBranches = append(newBranches, branches...)
 		}
-		return &referrers
+		return newBranches
 	case *ssa.Call:
 		callcomm := value.Common()
 		if callcomm.IsInvoke() {
 			// invoke mode (dynamic dispatch on interface)
 			// TODO: figure out how to get the concrete Call instead of the interface abstract method
-			return nil
+			branch.end = true
+			return []DefUseBranch{branch}
 		} else {
 			// call mode
 			switch v := callcomm.Value.(type) {
 			case *ssa.Function:
-				var instrs []ssa.Instruction
+				var newBranches []DefUseBranch
 				for _, b := range v.Blocks {
 					// The return instruction is guaranteed to be the last instruction in each BasicBlock
 					if instr, ok := b.Instrs[len(b.Instrs)-1].(*ssa.Return); ok {
-						referrers := branch.sourceReferrersOfInstruction(instr) // TODO: Will there be cyclic ref?
-						if referrers != nil {
-							instrs = append(instrs, *referrers...)
-						}
+						branches := branch.propagateOnInstr(instr) // TODO: Will there be cyclic ref?
+						newBranches = append(newBranches, branches...)
 					}
 					// TODO: if the return value ultimately sourced from parameter, we will need to go on analyzing parameters.
 				}
-				return &instrs
+				return newBranches
 			case *ssa.MakeClosure:
 				panic("TODO:" + value.String())
 			case *ssa.Builtin:
@@ -401,13 +366,13 @@ func (branch *DefUseBranch) sourceReferrersOfValue(value ssa.Value) *[]ssa.Instr
 			}
 		}
 	case *ssa.Convert:
-		return branch.sourceReferrersOfValue(value.X)
+		return branch.propagateOnValue(value.X)
 	case *ssa.Slice:
-		return branch.sourceReferrersOfValue(value.X)
+		return branch.propagateOnValue(value.X)
 	case *ssa.MakeInterface:
-		return branch.sourceReferrersOfValue(value.X)
+		return branch.propagateOnValue(value.X)
 	case *ssa.Lookup:
-		return branch.sourceReferrersOfValue(value.X)
+		return branch.propagateOnValue(value.X)
 	case *ssa.Global:
 		vt := value.Type()
 		cnt := 0
@@ -417,37 +382,30 @@ func (branch *DefUseBranch) sourceReferrersOfValue(value ssa.Value) *[]ssa.Instr
 			pt, ok = vt.(*types.Pointer)
 		}
 		branch.refCount += cnt
-		return value.Referrers()
+		return branch.propagateOnReferrers(value.Referrers())
 	case *ssa.Parameter:
-		return nil
-	case *ssa.TypeAssert:
-		return nil
-	case *ssa.ChangeType:
-		return nil
-	case *ssa.MakeMap:
-		return nil
-	case *ssa.MakeSlice:
-		return nil
-	case *ssa.MakeChan:
-		return nil
-	case *ssa.MakeClosure:
-		return nil
-	case *ssa.FreeVar:
-		return nil
-	case *ssa.Const:
-		return nil
+		panic("TODO: " + value.String())
+	case *ssa.TypeAssert,
+		*ssa.ChangeType,
+		*ssa.MakeMap,
+		*ssa.MakeSlice,
+		*ssa.MakeChan,
+		*ssa.MakeClosure,
+		*ssa.FreeVar,
+		*ssa.Const:
+		branch.end = true
+		return []DefUseBranch{branch}
 	default:
 		panic("TODO:" + value.String())
 	}
 }
 
 func (branch DefUseBranch) String() string {
-	instr := ""
-	pos := "-"
-	if branch.instr != nil {
-		instr = branch.instr.String()
-		pos = branch.fset.Position(branch.instr.Pos()).String()
+	var valuePos []string
+	for _, v := range branch.valueChain {
+		valuePos = append(valuePos, branch.fset.Position(v.Pos()).String())
 	}
 	fields := branch.fields.String()
-	return fmt.Sprintf("%s (%s) [%s]", instr, pos, fields)
+	return fmt.Sprintf(`%q
+	%s`, fields, strings.Join(valuePos, "\n\t"))
 }
