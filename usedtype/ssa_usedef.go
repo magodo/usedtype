@@ -220,37 +220,64 @@ func (branch DefUseBranch) propagateOnInstr(instr ssa.Instruction) DefUseBranche
 	}
 	branch.seenInstructions[instr] = struct{}{}
 	switch instr := instr.(type) {
-	case *ssa.Extract:
+	case *ssa.Alloc:
 		return branch.propagateOnValue(instr)
-	case *ssa.UnOp:
-		return branch.propagateOnValue(instr)
-	case *ssa.FieldAddr:
-		return branch.propagateOnValue(instr)
-	case *ssa.IndexAddr:
-		return branch.propagateOnValue(instr)
-	case *ssa.Phi:
+	case *ssa.BinOp:
 		return branch.propagateOnValue(instr)
 	case *ssa.Call:
 		return branch.propagateOnValue(instr)
-	case *ssa.MakeMap:
-		return branch.propagateOnValue(instr)
-	case *ssa.TypeAssert:
+	case *ssa.ChangeInterface:
 		return branch.propagateOnValue(instr)
 	case *ssa.ChangeType:
 		return branch.propagateOnValue(instr)
 	case *ssa.Convert:
 		return branch.propagateOnValue(instr)
-	case *ssa.Slice:
+	case *ssa.DebugRef:
+		branch.end = true
+		return []DefUseBranch{branch}
+	case *ssa.Defer:
+		return branch.propagateOnCallCommon(instr.Call)
+	case *ssa.Extract:
 		return branch.propagateOnValue(instr)
-	case *ssa.MakeSlice:
+	case *ssa.Field:
+		return branch.propagateOnValue(instr)
+	case *ssa.FieldAddr:
+		return branch.propagateOnValue(instr)
+	case *ssa.Go:
+		return branch.propagateOnCallCommon(instr.Call)
+	case *ssa.If:
+		return branch.propagateOnValue(instr.Cond)
+	case *ssa.Index:
+		return branch.propagateOnValue(instr)
+	case *ssa.IndexAddr:
+		return branch.propagateOnValue(instr)
+	case *ssa.Jump:
+		branch.end = true
+		return []DefUseBranch{branch}
+	case *ssa.Lookup:
 		return branch.propagateOnValue(instr)
 	case *ssa.MakeChan:
 		return branch.propagateOnValue(instr)
-	case *ssa.MakeInterface:
-		return branch.propagateOnValue(instr)
 	case *ssa.MakeClosure:
 		return branch.propagateOnValue(instr)
-	case *ssa.Lookup:
+	case *ssa.MakeInterface:
+		return branch.propagateOnValue(instr)
+	case *ssa.MakeMap:
+		return branch.propagateOnValue(instr)
+	case *ssa.MakeSlice:
+		return branch.propagateOnValue(instr)
+	case *ssa.MapUpdate:
+		branch.end = true
+		return []DefUseBranch{branch}
+	case *ssa.Next:
+		branch.end = true
+		return []DefUseBranch{branch}
+	case *ssa.Panic:
+		branch.end = true
+		return []DefUseBranch{branch}
+	case *ssa.Phi:
+		return branch.propagateOnValue(instr)
+	case *ssa.Range:
 		return branch.propagateOnValue(instr)
 	case *ssa.Return:
 		var newBranches []DefUseBranch
@@ -259,6 +286,15 @@ func (branch DefUseBranch) propagateOnInstr(instr ssa.Instruction) DefUseBranche
 			newBranches = append(newBranches, branches...)
 		}
 		return newBranches
+	case *ssa.RunDefers:
+		branch.end = true
+		return []DefUseBranch{branch}
+	case *ssa.Select:
+		return branch.propagateOnValue(instr)
+	case *ssa.Send:
+		return branch.propagateOnValue(instr.X)
+	case *ssa.Slice:
+		return branch.propagateOnValue(instr)
 	case *ssa.Store:
 		fromValue := branch.valueChain[len(branch.valueChain)-1]
 		if fromValue == instr.Val {
@@ -266,8 +302,12 @@ func (branch DefUseBranch) propagateOnInstr(instr ssa.Instruction) DefUseBranche
 		}
 		branch.refCount--
 		return branch.propagateOnValue(instr.Val)
+	case *ssa.TypeAssert:
+		return branch.propagateOnValue(instr)
+	case *ssa.UnOp:
+		return branch.propagateOnValue(instr)
 	default:
-		panic("TODO: " + instr.String())
+		panic("Not gonna happen")
 	}
 }
 
@@ -296,8 +336,124 @@ func (branch DefUseBranch) propagateOnValue(value ssa.Value) DefUseBranches {
 		xBranches := branch.propagateOnValue(value.X)
 		yBranches := branch.propagateOnValue(value.Y)
 		return append(xBranches, yBranches...)
+	case *ssa.Builtin:
+		// TODO
+		panic(branch.String())
+	case *ssa.Call:
+		callcomm := value.Common()
+		if callcomm == nil {
+			branch.end = true
+			return []DefUseBranch{branch}
+		}
+		return branch.propagateOnCallCommon(*callcomm)
+	case *ssa.ChangeInterface:
+		branch.end = true
+		return []DefUseBranch{branch}
+	case *ssa.ChangeType:
+		branch.end = true
+		return []DefUseBranch{branch}
+	case *ssa.Const:
+		branch.end = true
+		return []DefUseBranch{branch}
+	case *ssa.Convert:
+		return branch.propagateOnValue(value.X)
 	case *ssa.Extract:
 		return branch.propagateOnValue(value.Tuple)
+	case *ssa.Field:
+		return branch.propagateOnValue(value.X)
+	case *ssa.FieldAddr:
+		vt := value.X.Type().(*types.Pointer).Elem().Underlying().(*types.Struct).Field(value.Field).Type()
+		cnt := 1
+		for pt, ok := vt.(*types.Pointer); ok; {
+			cnt++
+			vt = pt.Elem()
+			pt, ok = vt.(*types.Pointer)
+		}
+		branch.refCount = cnt
+		return branch.propagateOnReferrers(value.Referrers())
+	case *ssa.FreeVar:
+		branch.end = true
+		return []DefUseBranch{branch}
+	case *ssa.Function:
+		var newBranches []DefUseBranch
+		for _, b := range value.Blocks {
+			// The return instruction is guaranteed to be the last instruction in each BasicBlock
+			if instr, ok := b.Instrs[len(b.Instrs)-1].(*ssa.Return); ok {
+				branches := branch.propagateOnInstr(instr)
+				newBranches = append(newBranches, branches...)
+			}
+			// TODO: if the return value ultimately sourced from parameter, we will need to go on analyzing parameters.
+		}
+		return newBranches
+	case *ssa.Global:
+		vt := value.Type()
+		cnt := 0
+		for pt, ok := vt.(*types.Pointer); ok; {
+			cnt++
+			vt = pt.Elem()
+			pt, ok = vt.(*types.Pointer)
+		}
+		branch.refCount += cnt
+		return branch.propagateOnReferrers(value.Referrers())
+	case *ssa.Index:
+		branch.end = true
+		return []DefUseBranch{branch}
+	case *ssa.IndexAddr:
+		//fromValue := branch.valueChain[len(branch.valueChain)-1]
+		//if fromValue == value.Index {
+		//	branch.end = true
+		//	return []DefUseBranch{branch}
+		//}
+		//branch.refCount++
+		//return branch.propagateOnValue(value.X)
+		branch.end = true
+		return []DefUseBranch{branch}
+	case *ssa.Lookup:
+		return branch.propagateOnValue(value.X)
+	case *ssa.MakeChan:
+		branch.end = true
+		return []DefUseBranch{branch}
+	case *ssa.MakeInterface:
+		return branch.propagateOnValue(value.X)
+	case *ssa.MakeMap:
+		branch.end = true
+		return []DefUseBranch{branch}
+	case *ssa.MakeSlice:
+		branch.end = true
+		return []DefUseBranch{branch}
+	case *ssa.MakeClosure:
+		branch.end = true
+		return []DefUseBranch{branch}
+	case *ssa.Next:
+		branch.end = true
+		return []DefUseBranch{branch}
+	case *ssa.Parameter:
+		// TODO
+		panic(branch.String())
+	case *ssa.Phi:
+		var newBranches []DefUseBranch
+		for _, edge := range value.Edges {
+			branches := branch.propagateOnValue(edge)
+			newBranches = append(newBranches, branches...)
+		}
+		return newBranches
+	case *ssa.Range:
+		branch.end = true
+		return []DefUseBranch{branch}
+	case *ssa.Select:
+		var newBranches []DefUseBranch
+		for _, instr := range value.Block().Instrs {
+			branches := branch.propagateOnInstr(instr)
+			newBranches = append(newBranches, branches...)
+		}
+		return newBranches
+	case *ssa.Slice:
+		// TODO
+		panic(branch.String())
+		//return branch.propagateOnValue(value.X)
+	case *ssa.TypeAssert:
+		branch.end = true
+		return []DefUseBranch{branch}
 	case *ssa.UnOp:
 		switch value.Op {
 		case token.NOT,
@@ -315,95 +471,10 @@ func (branch DefUseBranch) propagateOnValue(value ssa.Value) DefUseBranches {
 			}
 			return branch.propagateOnReferrers(value.Referrers())
 		default:
-			panic("won't reach here")
+			panic("Not gonna happen")
 		}
-	case *ssa.FieldAddr:
-		vt := value.X.Type().(*types.Pointer).Elem().Underlying().(*types.Struct).Field(value.Field).Type()
-		cnt := 1
-		for pt, ok := vt.(*types.Pointer); ok; {
-			cnt++
-			vt = pt.Elem()
-			pt, ok = vt.(*types.Pointer)
-		}
-
-		branch.refCount = cnt
-		return branch.propagateOnReferrers(value.Referrers())
-	case *ssa.IndexAddr:
-		fromValue := branch.valueChain[len(branch.valueChain)-1]
-		if fromValue == value.Index {
-			branch.end = true
-			return []DefUseBranch{branch}
-		}
-		branch.refCount++
-		return branch.propagateOnValue(value.X)
-	case *ssa.Phi:
-		var newBranches []DefUseBranch
-		for _, edge := range value.Edges {
-			branches := branch.propagateOnValue(edge)
-			newBranches = append(newBranches, branches...)
-		}
-		return newBranches
-	case *ssa.Call:
-		callcomm := value.Common()
-		if callcomm.IsInvoke() {
-			// invoke mode (dynamic dispatch on interface)
-			// TODO: figure out how to get the concrete Call instead of the interface abstract method
-			branch.end = true
-			return []DefUseBranch{branch}
-		} else {
-			// call mode
-			switch v := callcomm.Value.(type) {
-			case *ssa.Function:
-				var newBranches []DefUseBranch
-				for _, b := range v.Blocks {
-					// The return instruction is guaranteed to be the last instruction in each BasicBlock
-					if instr, ok := b.Instrs[len(b.Instrs)-1].(*ssa.Return); ok {
-						branches := branch.propagateOnInstr(instr) // TODO: Will there be cyclic ref?
-						newBranches = append(newBranches, branches...)
-					}
-					// TODO: if the return value ultimately sourced from parameter, we will need to go on analyzing parameters.
-				}
-				return newBranches
-			case *ssa.MakeClosure:
-				panic("TODO:" + value.String())
-			case *ssa.Builtin:
-				panic("TODO:" + value.String())
-			default:
-				panic("should not reach here")
-			}
-		}
-	case *ssa.Convert:
-		return branch.propagateOnValue(value.X)
-	case *ssa.Slice:
-		return branch.propagateOnValue(value.X)
-	case *ssa.MakeInterface:
-		return branch.propagateOnValue(value.X)
-	case *ssa.Lookup:
-		return branch.propagateOnValue(value.X)
-	case *ssa.Global:
-		vt := value.Type()
-		cnt := 0
-		for pt, ok := vt.(*types.Pointer); ok; {
-			cnt++
-			vt = pt.Elem()
-			pt, ok = vt.(*types.Pointer)
-		}
-		branch.refCount += cnt
-		return branch.propagateOnReferrers(value.Referrers())
-	case *ssa.Parameter:
-		panic("TODO: " + value.String())
-	case *ssa.TypeAssert,
-		*ssa.ChangeType,
-		*ssa.MakeMap,
-		*ssa.MakeSlice,
-		*ssa.MakeChan,
-		*ssa.MakeClosure,
-		*ssa.FreeVar,
-		*ssa.Const:
-		branch.end = true
-		return []DefUseBranch{branch}
 	default:
-		panic("TODO:" + value.String())
+		panic("Not gonna happen")
 	}
 }
 
@@ -415,4 +486,16 @@ func (branch DefUseBranch) String() string {
 	fields := branch.fields.String()
 	return fmt.Sprintf(`%q
 	%s`, fields, strings.Join(valuePos, "\n\t")) + "\n"
+}
+
+func (branch DefUseBranch) propagateOnCallCommon(callcomm ssa.CallCommon) DefUseBranches {
+	if callcomm.IsInvoke() {
+		// invoke mode (dynamic dispatch on interface)
+		// TODO: figure out how to get the concrete Call instead of the interface abstract method
+		branch.end = true
+		return []DefUseBranch{branch}
+	} else {
+		// call mode
+		return branch.propagateOnValue(callcomm.Value)
+	}
 }

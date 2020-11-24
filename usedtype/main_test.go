@@ -8,11 +8,15 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-var pathA string
+var (
+	pathA string
+	pathValParam string
+)
 
 func init() {
 	pwd, _ := os.Getwd()
 	pathA = filepath.Join(pwd, "testdata", "src", "a")
+	pathValParam = filepath.Join(pwd, "testdata", "src", "val_parm")
 }
 
 func terraformSchemaTypeFilter(epkg *packages.Package, t *types.Struct) bool {

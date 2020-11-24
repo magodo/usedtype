@@ -37,12 +37,14 @@ func TestUseDefBranches_Walk(t *testing.T) {
 	%[1]s:8:2
 	%[1]s:12:6
 	%[1]s:12:28
+	%[1]s:17:6
 	%[1]s:18:6
 	%[1]s:20:25
 "Req.properties"
 	%[1]s:8:2
 	%[1]s:12:6
 	%[1]s:12:28
+	%[1]s:17:6
 	%[1]s:18:6
 	%[1]s:23:25
 "Req.properties.prop1"
@@ -55,6 +57,7 @@ func TestUseDefBranches_Walk(t *testing.T) {
 	%[1]s:8:2
 	%[1]s:12:6
 	%[1]s:12:28
+	%[1]s:17:6
 	%[1]s:18:6
 	%[1]s:20:25
 	%[1]s:21:8
@@ -63,6 +66,7 @@ func TestUseDefBranches_Walk(t *testing.T) {
 	%[1]s:8:2
 	%[1]s:12:6
 	%[1]s:12:28
+	%[1]s:17:6
 	%[1]s:18:6
 	%[1]s:23:25
 	%[1]s:24:8
