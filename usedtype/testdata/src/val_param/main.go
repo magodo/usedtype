@@ -2,7 +2,6 @@ package main
 
 import (
 	"sdk"
-	"strings"
 )
 
 func main() {
@@ -14,5 +13,21 @@ func main() {
 }
 
 func Normalize(input string) string {
-	return strings.ReplaceAll(strings.ToLower(input), " ", "")
+	return DummyReplaceAll(DummyToLower(input), " ", "")
+}
+
+func DummyReplaceAll(input, old, new string) string {
+	switch 1{
+	case 1:
+		return input
+	case 2:
+		return old
+	case 3:
+		return new
+	default:
+		return input[:len(input)]
+	}
+}
+func DummyToLower(input string) string {
+	return input
 }

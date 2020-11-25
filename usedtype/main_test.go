@@ -9,14 +9,18 @@ import (
 )
 
 var (
-	pathA string
-	pathValParam string
+	pathA           string
+	pathValParam    string
+	pathMutateParam string
+	pathMultiReturn string
 )
 
 func init() {
 	pwd, _ := os.Getwd()
 	pathA = filepath.Join(pwd, "testdata", "src", "a")
-	pathValParam = filepath.Join(pwd, "testdata", "src", "val_parm")
+	pathValParam = filepath.Join(pwd, "testdata", "src", "val_param")
+	pathMutateParam = filepath.Join(pwd, "testdata", "src", "mutate_param")
+	pathMultiReturn = filepath.Join(pwd, "testdata", "src", "multi_return")
 }
 
 func terraformSchemaTypeFilter(epkg *packages.Package, t *types.Struct) bool {
