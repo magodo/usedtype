@@ -34,21 +34,24 @@ func main() {
 	targetStructs := usedtype.FindExternalPackageStruct(pkgs, *pattern, terraformSchemaTypeFilter)
 	//fmt.Println(targetStructs)
 
+	// Find all ssa def node of the current package.
+	ssadefs := usedtype.FindInPackageAllDefValue(pkgs, ssapkgs)
+	for _, value := range ssadefs {
+		var branches usedtype.DefUseBranches
+		branches = usedtype.NewDefUseBranches(value.Value, value.Fset)
+		newbranches := branches.Walk()
+		_ = newbranches
+	}
+
 	// Explore the packages under test to see whether there is SSA node whose type matches any target struct.
 	// For each match, we will walk the dominator tree from that node in backward, to record the usage of each
 	// field of the struct.
-	output := usedtype.FindInPackageDefNodeOfTargetStructType(ssapkgs, targetStructs)
+	output := usedtype.FindInPackageDefValueOfTargetStructType(ssapkgs, targetStructs)
 
 	// Debug output each def node's position.
 	//fmt.Println(output)
 
 	// Now we need to recursively backward analyze from each found node, to record all the field accesses.
-	defer func() {
-		if p := recover(); p != nil {
-			fmt.Println(p)
-			panic(p)
-		}
-	}()
 	for tid, values := range output {
 		for _, value := range values {
 			var branches usedtype.DefUseBranches

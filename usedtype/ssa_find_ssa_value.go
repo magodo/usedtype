@@ -2,7 +2,9 @@ package usedtype
 
 import (
 	"fmt"
+	"go/token"
 	"go/types"
+	"golang.org/x/tools/go/packages"
 	"sort"
 	"strconv"
 	"strings"
@@ -10,9 +12,16 @@ import (
 	"golang.org/x/tools/go/ssa"
 )
 
-type StructDefNodes map[NamedTypeId][]ssa.Value
+type StructDefValues map[NamedTypeId][]ssa.Value
 
-func (m StructDefNodes) String() string {
+type SSAValue struct {
+	Value ssa.Value
+	Fset  *token.FileSet
+}
+
+type SSAValues []SSAValue
+
+func (m StructDefValues) String() string {
 	idstrings := []string{}
 	ids := []NamedTypeId{}
 	i := 0
@@ -37,9 +46,19 @@ func (m StructDefNodes) String() string {
 	return strings.Join(outputs, "")
 }
 
-// FindInPackageDefNodeOfTargetStructType find the SSA nodes that declares global/local variable that are of the same type
+func (values SSAValues) String() string {
+	var valueStrs []string
+
+	for _, value := range values {
+		valueStrs = append(valueStrs, fmt.Sprintf("%s: %s\n", value.Fset.Position(value.Value.Pos()), value.Value))
+	}
+	sort.Strings(valueStrs)
+	return strings.Join(valueStrs, "")
+}
+
+// FindInPackageDefValueOfTargetStructType find the SSA nodes that declares global/local variable that are of the same type
 // of the targetStructures for each SSA package. These nodes are the "def" nodes in context of SSA.
-func FindInPackageDefNodeOfTargetStructType(ssapkgs []*ssa.Package, targetStructs StructMap) StructDefNodes {
+func FindInPackageDefValueOfTargetStructType(ssapkgs []*ssa.Package, targetStructs StructMap) StructDefValues {
 	output := map[NamedTypeId][]ssa.Value{}
 	for _, pkg := range ssapkgs {
 		var cb WalkCallback
@@ -81,5 +100,36 @@ func FindInPackageDefNodeOfTargetStructType(ssapkgs []*ssa.Package, targetStruct
 		ssaTraversal := NewTraversal()
 		ssaTraversal.WalkInPackage(pkg, cb)
 	}
+	return output
+}
+
+func FindInPackageAllDefValue(pkgs []*packages.Package, ssapkgs []*ssa.Package) SSAValues {
+	output := []SSAValue{}
+	for i := range ssapkgs {
+		ssapkg := ssapkgs[i]
+		pkg := pkgs[i]
+		var cb WalkCallback
+		cb = func(v ssa.Value) {
+			switch v := v.(type) {
+			case *ssa.Alloc,
+				*ssa.Parameter:
+				// continue
+			case *ssa.Global:
+				// E.g. init$guard
+				if v.Object() == nil {
+					return
+				}
+			default:
+				return
+			}
+			output = append(output, SSAValue{
+				Value: v,
+				Fset:  pkg.Fset,
+			})
+		}
+		ssaTraversal := NewTraversal()
+		ssaTraversal.WalkInPackage(ssapkg, cb)
+	}
+
 	return output
 }

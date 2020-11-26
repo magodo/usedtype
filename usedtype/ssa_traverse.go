@@ -69,6 +69,10 @@ func (t *Traversal) walkFunction(pkg *ssa.Package, fn *ssa.Function, cb WalkCall
 	}
 	t.seen.functions[fn] = struct{}{}
 
+	for _, param := range fn.Params {
+		t.walkValue(pkg, param, cb)
+	}
+
 	t.walkInstructions(pkg, fn, cb)
 
 	for _, anon := range fn.AnonFuncs {

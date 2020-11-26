@@ -167,7 +167,7 @@ func TestUseDefBranches_Walk(t *testing.T) {
 		pkgs, ssapkgs, err := usedtype.BuildPackages(c.dir, c.patterns)
 		require.NoError(t, err, idx)
 		structs := usedtype.FindExternalPackageStruct(pkgs, c.epattern, c.filter)
-		structnodes := usedtype.FindInPackageDefNodeOfTargetStructType(ssapkgs, structs)
+		structnodes := usedtype.FindInPackageDefValueOfTargetStructType(ssapkgs, structs)
 		for tid, values := range structnodes {
 			chains := []string{}
 			for _, value := range values {
