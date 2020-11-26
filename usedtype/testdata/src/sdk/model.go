@@ -3,6 +3,12 @@ package sdk
 type Req struct {
 	Name        string `json:"name,omitempty"`
 	*Properties `json:"properties,omitempty"`
+	Metadata    Metadata `json:"metadata,omitempty"`
+}
+
+type Metadata struct {
+	Scope   string `json:"scope"`
+	Version string `json:"version"`
 }
 
 type Properties struct {
