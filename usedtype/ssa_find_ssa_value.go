@@ -62,7 +62,7 @@ func FindInPackageDefValueOfTargetStructType(ssapkgs []*ssa.Package, targetStruc
 	output := map[NamedTypeId][]ssa.Value{}
 	for _, pkg := range ssapkgs {
 		var cb WalkCallback
-		cb = func(v ssa.Value) {
+		cb = func(_ ssa.Instruction, v ssa.Value) {
 			switch v.(type) {
 			// Local variable declaration in functions or global variable declaration
 			case *ssa.Alloc,
@@ -109,17 +109,8 @@ func FindInPackageAllDefValue(pkgs []*packages.Package, ssapkgs []*ssa.Package) 
 		ssapkg := ssapkgs[i]
 		pkg := pkgs[i]
 		var cb WalkCallback
-		cb = func(v ssa.Value) {
-			switch v := v.(type) {
-			case *ssa.Alloc,
-				*ssa.Parameter:
-				// continue
-			case *ssa.Global:
-				// E.g. init$guard
-				if v.Object() == nil {
-					return
-				}
-			default:
+		cb = func(_ ssa.Instruction, v ssa.Value) {
+			if !IsDefValue(v) {
 				return
 			}
 			output = append(output, SSAValue{

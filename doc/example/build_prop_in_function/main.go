@@ -1,0 +1,1 @@
+../../../usedtype/testdata/src/build_prop_in_function/main.go
