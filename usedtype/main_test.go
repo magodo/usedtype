@@ -13,6 +13,7 @@ var (
 	pathValParam    string
 	pathMutateParam string
 	pathMultiReturn string
+	pathBuildPtrPropInFunctionWithIf string
 )
 
 func init() {
@@ -21,6 +22,7 @@ func init() {
 	pathValParam = filepath.Join(pwd, "testdata", "src", "val_param")
 	pathMutateParam = filepath.Join(pwd, "testdata", "src", "mutate_param")
 	pathMultiReturn = filepath.Join(pwd, "testdata", "src", "multi_return")
+	pathBuildPtrPropInFunctionWithIf = filepath.Join(pwd, "testdata", "src", "build_ptr_prop_in_function_with_if")
 }
 
 func terraformSchemaTypeFilter(epkg *packages.Package, t *types.Struct) bool {

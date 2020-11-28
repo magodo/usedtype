@@ -144,10 +144,54 @@ func TestUseDefBranches_WalkODUChains(t *testing.T) {
 	%[1]s:9:6
 `, filepath.Join(pathMultiReturn, "main.go")),
 		},
+		// 4
+		{
+			pathBuildPtrPropInFunctionWithIf,
+			[]string{"."},
+			"sdk",
+			fmt.Sprintf(`
+%[1]s:15:16 (parameter b : bool): ""
+	-
+	not used anywhere
+%[1]s:18:25 (new sdk.Properties (complit)): ""
+	%[1]s:16:6 (phi)
+	%[1]s:24:2
+	%[1]s:11:6
+	waiting for consumer
+%[1]s:18:25 (new sdk.Properties (complit)): "Properties.prop1"
+	%[1]s:19:8
+	%[1]s:19:8
+	waiting for provider
+%[1]s:21:25 (new sdk.Properties (complit)): ""
+	%[1]s:16:6 (phi)
+	%[1]s:24:2
+	%[1]s:11:6
+	waiting for consumer
+%[1]s:21:25 (new sdk.Properties (complit)): "Properties.prop2"
+	%[1]s:22:8
+	%[1]s:22:8
+	waiting for provider
+%[1]s:8:2 (local sdk.Req (req)): ""
+	%[1]s:12:6
+	not used anywhere
+%[1]s:8:2 (local sdk.Req (req)): "Req.name"
+	-
+	%[1]s:9:7
+	waiting for provider
+%[1]s:8:2 (local sdk.Req (req)): "Req.properties"
+	%[1]s:11:6
+	%[1]s:11:6
+	waiting for provider
+`, filepath.Join(pathBuildPtrPropInFunctionWithIf, "main.go")),
+		},
 	}
 
 	for idx, c := range cases {
+		if idx != 4 {
+			continue
+		}
 		pkgs, ssapkgs, err := usedtype.BuildPackages(c.dir, c.patterns)
+		require.NoError(t, err, idx)
 		ssadefs := usedtype.FindInPackageAllDefValue(pkgs, ssapkgs)
 		var chains []string
 		for _, value := range ssadefs {
@@ -156,9 +200,52 @@ func TestUseDefBranches_WalkODUChains(t *testing.T) {
 				chains = append(chains, chain.String())
 			}
 		}
-		require.NoError(t, err, idx)
 		sort.Strings(chains)
-		//fmt.Println(strings.Join(chains, "\n"))
+		fmt.Println(strings.Join(chains, "\n"))
 		require.Equal(t, c.expect, "\n"+strings.Join(chains, "\n")+"\n", idx)
+	}
+}
+
+func TestUseDefBranches_Pair(t *testing.T) {
+	cases := []struct {
+		dir      string
+		patterns []string
+		epattern string
+		expect   string
+	}{
+		// 0
+		{
+			pathBuildPtrPropInFunctionWithIf,
+			[]string{"."},
+			"sdk",
+			"",
+		},
+	}
+
+	for idx, c := range cases {
+		pkgs, ssapkgs, err := usedtype.BuildPackages(c.dir, c.patterns)
+		require.NoError(t, err, idx)
+		ssadefs := usedtype.FindInPackageAllDefValue(pkgs, ssapkgs)
+		var allOduChains usedtype.ODUChains
+		for _, value := range ssadefs {
+			oduChains := usedtype.WalkODUChains(value.Value, ssapkgs, value.Fset)
+			for _, chain := range oduChains {
+				allOduChains = append(allOduChains, chain)
+			}
+		}
+		var tmpchains []string
+		for _, c := range allOduChains {
+			tmpchains = append(tmpchains, c.String())
+		}
+		sort.Strings(tmpchains)
+
+		oduChains := allOduChains.Pair()
+		var chains []string
+		for _, c := range oduChains {
+			chains = append(chains, c.String())
+		}
+		sort.Strings(chains)
+		fmt.Println(strings.Join(chains, "\n"))
+		//require.Equal(t, c.expect, "\n"+strings.Join(chains, "\n")+"\n", idx)
 	}
 }

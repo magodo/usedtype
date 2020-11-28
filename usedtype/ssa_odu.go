@@ -9,15 +9,16 @@ import (
 	"golang.org/x/tools/go/ssa"
 )
 
-type chainState int
+type chainState string
 
 const (
-	chainActive chainState = iota
-	chainEndNoUse
-	chainEndProvider
-	chainEndConsumer
-	chainEndCyclicUse
-	chainEndOutOfBoundary
+	chainActive           chainState = "active"
+	chainEndNoUse                    = "not used anywhere"
+	chainEndProvider                 = "waiting for consumer"
+	chainEndConsumer                 = "waiting for provider"
+	chainEndCyclicUse                = "cyclic usage"
+	chainEndOutOfBoundary            = "out of package boundary"
+	chainEndMerged                   = "merged"
 )
 
 type ODUChain struct {
@@ -31,6 +32,10 @@ type ODUChain struct {
 	// This will be added each time it is referenced (&), and will be reduced each time
 	// it is de-referenced (*).
 	refCount int
+
+	// owner keeps track on the current owner of the chain, if the refCount fall to 0, then it become nil
+	// (indicating it is now a hanging value)
+	owner ssa.Value
 
 	// instrChain keep track of the def-use instruction chain starting from the firs instruction.
 	instrChain []ssa.Instruction
@@ -85,6 +90,7 @@ func WalkODUChains(value ssa.Value, pkgs []*ssa.Package, fset *token.FileSet) OD
 		pkgBoundary:      pkgBoundary,
 		root:             value,
 		refCount:         ReferenceDepth(value.Type()),
+		owner:            value,
 		instrChain:       []ssa.Instruction{},
 		valueChain:       []ssa.Value{value}, // record root value
 		fields:           []structField{},
@@ -129,6 +135,7 @@ func (ochain ODUChain) copy() ODUChain {
 		instrChain:       ochain.instrChain,
 		valueChain:       newValueChain,
 		refCount:         ochain.refCount,
+		owner:            ochain.owner,
 		fields:           newFields,
 		seenInstructions: newSeenInstructions,
 		seenValues:       newSeenValues,
@@ -206,6 +213,7 @@ func (ochain ODUChain) propagateOnInstr(instr ssa.Instruction) ODUChains {
 		// We are going to track the ownership of a new object from this point,
 		// hence we should reset the refCount.
 		chain.refCount = ReferenceDepth(instr.X.Type().(*types.Pointer).Elem().Underlying().(*types.Struct).Field(instr.Field).Type()) + 1
+		chain.owner = instr.X
 		return chain.propagateOnValue(instr)
 	case *ssa.Go:
 		return chain.propagateOnCallCommon(instr.Call)
@@ -226,6 +234,7 @@ func (ochain ODUChain) propagateOnInstr(instr ssa.Instruction) ODUChains {
 			return []ODUChain{chain}
 		}
 		chain.refCount = ReferenceDepth(instr.X.Type()) + 1
+		chain.owner = instr.X
 		return chain.propagateOnValue(instr)
 	case *ssa.Jump:
 		panic("should never happen")
@@ -293,7 +302,7 @@ func (ochain ODUChain) propagateOnInstr(instr ssa.Instruction) ODUChains {
 				}
 				chain.valueChain = append(chain.valueChain, value)
 				chain.seenValues[value] = struct{}{}
-				newChains = append(newChains, chain.propagateOnValue(value)...)
+				newChains = append(newChains, chain.propagateOnReferrers(value.Referrers())...)
 			}
 		}
 		// In case all the referrers are instruction only, we will end this chain.
@@ -321,8 +330,9 @@ func (ochain ODUChain) propagateOnInstr(instr ssa.Instruction) ODUChains {
 		fromValue := chain.valueChain[len(chain.valueChain)-1]
 		if fromValue == instr.Val {
 			chain.state = chainEndProvider
+		} else {
+			chain.state = chainEndConsumer
 		}
-		chain.state = chainEndConsumer
 		return []ODUChain{chain}
 	case *ssa.TypeAssert:
 		if !instr.CommaOk {
@@ -433,6 +443,9 @@ func (ochain ODUChain) propagateOnValue(value ssa.Value) ODUChains {
 		case token.MUL:
 			chain.refCount--
 			assert(chain.refCount >= 0)
+			if chain.refCount == 0 {
+				ochain.owner = nil
+			}
 			return chain.propagateOnReferrers(value.Referrers())
 		default:
 			panic("will never happen")
@@ -461,17 +474,74 @@ func (ochain ODUChain) propagateOnCallCommon(com ssa.CallCommon) ODUChains {
 	return ochain.propagateOnValue(com.Value)
 }
 
-func (ochain ODUChain) String() string {
+func (chain ODUChain) append(ochain ODUChain) ODUChain {
+	newchain := chain.copy()
+	newchain.fields = append(newchain.fields, ochain.fields...)
+	newchain.state = chainEndMerged
+	return newchain
+}
+
+func (chain ODUChain) String() string {
 	var positions []string
 
-	for _, instr := range ochain.instrChain {
+	for _, instr := range chain.instrChain {
 		suffix := ""
 		if _, ok := instr.(*ssa.Phi); ok {
 			suffix = " (phi)"
 		}
-		positions = append(positions, ochain.fset.Position(instr.Pos()).String()+suffix)
+		positions = append(positions, chain.fset.Position(instr.Pos()).String()+suffix)
 	}
-	fields := ochain.fields.String()
+	fields := chain.fields.String()
 	return fmt.Sprintf(`%s (%s): %q
-	%s`, ochain.fset.Position(ochain.root.Pos()).String(), ochain.root, fields, strings.Join(positions, "\n\t"))
+	%s
+	%s`, chain.fset.Position(chain.root.Pos()).String(), chain.root, fields, strings.Join(positions, "\n\t"), chain.state)
+}
+
+func (chains ODUChains) Pair() ODUChains {
+	var newChains []ODUChain
+	// It is possible that one instruction corresponds to multiple providers.
+	providerCache := map[ssa.Instruction][]ODUChain{}
+
+	for _, chain := range chains {
+		if chain.state == chainEndProvider {
+			lastInstr := chain.instrChain[len(chain.instrChain)-1]
+			providerCache[lastInstr] = append(providerCache[lastInstr], chain)
+		}
+	}
+
+	for _, chain := range chains {
+		switch chain.state {
+		case chainEndProvider:
+			continue
+		case chainEndConsumer:
+			lastInstr := chain.instrChain[len(chain.instrChain)-1]
+			if providers, ok := providerCache[lastInstr]; ok {
+				for _, provider := range providers {
+					// We should find among all the chains for those belongs to the same "owner" as current provider chain.
+					// and then append them to the current consumer chain.
+					for _, c := range chains {
+						if c.owner == provider.owner {
+							newChains = append(newChains, chain.append(c))
+						}
+					}
+				}
+				delete(providerCache, lastInstr)
+			}
+		case chainEndNoUse,
+			chainEndCyclicUse,
+			chainEndOutOfBoundary:
+			fmt.Println(chain.String())
+			newChains = append(newChains, chain)
+		default:
+			panic("will never happen")
+		}
+	}
+
+	// There might be remaining chains in the cache that have no pairs, keeping them unpaired will not impact
+	// struct field coverage, e.g., consumer chains waiting for provider like const value, function with no
+	// parameter or non-struct parameter. Hence, we will simply keep them.
+
+	assert(len(providerCache) == 0)
+
+	return newChains
 }
