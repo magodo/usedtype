@@ -25,12 +25,13 @@ func NewTraversal() Traversal {
 	}
 }
 
-type WalkCallback func(instr ssa.Instruction, val ssa.Value)
+type WalkInstrCallback func(instr ssa.Instruction)
+type WalkValueCallback func(val ssa.Value)
 
 // WalkInPackage traverse inside a usedtype package from all top level functions (skipping other top level members:
 // Type, NamedConst and Global). It will iterate each instruction and the value belongs to it.
 // Note that only the functions defined in this usedtype package is traversed, it will not cross package boundary.
-func (t *Traversal) WalkInPackage(pkg *ssa.Package, cb WalkCallback) {
+func (t *Traversal) WalkInPackage(pkg *ssa.Package, icb WalkInstrCallback, vcb WalkValueCallback) {
 	t.seen = seen{
 		functions:    map[*ssa.Function]struct{}{},
 		instructions: map[ssa.Instruction]struct{}{},
@@ -46,16 +47,18 @@ func (t *Traversal) WalkInPackage(pkg *ssa.Package, cb WalkCallback) {
 				return
 			}
 			t.seen.values[m] = struct{}{}
-			cb(nil,m)
+			if vcb != nil {
+				vcb(m)
+			}
 		case *ssa.Function:
-			t.walkFunction(pkg, m, cb)
+			t.walkFunction(pkg, m, icb, vcb)
 		default:
 			panic(fmt.Sprintf("unreachable: %T", m))
 		}
 	}
 }
 
-func (t *Traversal) walkFunction(pkg *ssa.Package, fn *ssa.Function, cb WalkCallback) {
+func (t *Traversal) walkFunction(pkg *ssa.Package, fn *ssa.Function, icb WalkInstrCallback, vcb WalkValueCallback) {
 	// Ignore cross package function call, since the function call in other
 	// package will be handled in that package. The final result will be composed
 	// from all the passes.
@@ -70,18 +73,18 @@ func (t *Traversal) walkFunction(pkg *ssa.Package, fn *ssa.Function, cb WalkCall
 	t.seen.functions[fn] = struct{}{}
 
 	for _, param := range fn.Params {
-		t.walkValue(pkg, nil, param, cb)
+		t.walkValue(pkg, param, vcb)
 	}
 
-	t.walkInstructions(pkg, fn, cb)
+	t.walkInstructions(pkg, fn, icb, vcb)
 
 	for _, anon := range fn.AnonFuncs {
 		// functions use anonymous functions defined beneath them
-		t.walkFunction(pkg, anon, cb)
+		t.walkFunction(pkg, anon, icb, vcb)
 	}
 }
 
-func (t *Traversal) walkInstructions(pkg *ssa.Package, fn *ssa.Function, cb WalkCallback) {
+func (t *Traversal) walkInstructions(pkg *ssa.Package, fn *ssa.Function, icb WalkInstrCallback, vcb WalkValueCallback) {
 	for _, b := range fn.Blocks {
 		for _, instr := range b.Instrs {
 			if _, ok := t.seen.instructions[instr]; ok {
@@ -89,17 +92,21 @@ func (t *Traversal) walkInstructions(pkg *ssa.Package, fn *ssa.Function, cb Walk
 			}
 			t.seen.instructions[instr] = struct{}{}
 
+			if icb != nil{
+				icb(instr)
+			}
+
 			// traverse the operands in instructions
 			ops := instr.Operands(nil)
 
 			for _, arg := range ops {
-				t.walkValue(pkg, instr, *arg, cb)
+				t.walkValue(pkg, *arg, vcb)
 			}
 		}
 	}
 }
 
-func (t *Traversal) walkValue(pkg *ssa.Package, instr ssa.Instruction, v ssa.Value, cb WalkCallback) {
+func (t *Traversal) walkValue(pkg *ssa.Package, v ssa.Value, cb WalkValueCallback) {
 	if v == nil {
 		return
 	}
@@ -111,18 +118,15 @@ func (t *Traversal) walkValue(pkg *ssa.Package, instr ssa.Instruction, v ssa.Val
 
 	phi, ok := v.(*ssa.Phi)
 	if !ok {
-		switch v := v.(type) {
-		case *ssa.Function:
-			t.walkFunction(pkg, v, cb)
-			return
+		if cb != nil {
+			cb(v)
 		}
-		cb(instr, v)
 		return
 	}
 
 	applyPhi := func(v *ssa.Phi) {
 		for _, e := range v.Edges {
-			t.walkValue(pkg, instr, e, cb)
+			t.walkValue(pkg, e, cb)
 		}
 	}
 	applyPhi(phi)

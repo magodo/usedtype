@@ -10,13 +10,13 @@ var callPointLookup = &CallPointLookup{
 	cache: map[*ssa.Package]map[*ssa.Function][]ssa.Instruction{},
 }
 
-func (l *CallPointLookup)FindCallPoint(pkg *ssa.Package) map[*ssa.Function][]ssa.Instruction {
+func (l *CallPointLookup) FindCallPoint(pkg *ssa.Package) map[*ssa.Function][]ssa.Instruction {
 	if v, ok := l.cache[pkg]; ok {
 		return v
 	}
 	c := map[*ssa.Function][]ssa.Instruction{}
 	traverse := NewTraversal()
-	traverse.WalkInPackage(pkg, func(instr ssa.Instruction, val ssa.Value) {
+	traverse.WalkInPackage(pkg, func(instr ssa.Instruction) {
 		switch instr := instr.(type) {
 		case *ssa.Call:
 			com := instr.Call
@@ -35,7 +35,8 @@ func (l *CallPointLookup)FindCallPoint(pkg *ssa.Package) map[*ssa.Function][]ssa
 				panic("will never happen")
 			}
 		}
-	})
+	}, nil,
+	)
 	l.cache[pkg] = c
 	return c
 }

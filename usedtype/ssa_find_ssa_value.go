@@ -61,8 +61,8 @@ func (values SSAValues) String() string {
 func FindInPackageDefValueOfTargetStructType(ssapkgs []*ssa.Package, targetStructs StructMap) StructDefValues {
 	output := map[NamedTypeId][]ssa.Value{}
 	for _, pkg := range ssapkgs {
-		var cb WalkCallback
-		cb = func(_ ssa.Instruction, v ssa.Value) {
+		var cb WalkValueCallback
+		cb = func(v ssa.Value) {
 			switch v.(type) {
 			// Local variable declaration in functions or global variable declaration
 			case *ssa.Alloc,
@@ -98,7 +98,7 @@ func FindInPackageDefValueOfTargetStructType(ssapkgs []*ssa.Package, targetStruc
 		}
 
 		ssaTraversal := NewTraversal()
-		ssaTraversal.WalkInPackage(pkg, cb)
+		ssaTraversal.WalkInPackage(pkg, nil, cb)
 	}
 	return output
 }
@@ -108,8 +108,8 @@ func FindInPackageAllDefValue(pkgs []*packages.Package, ssapkgs []*ssa.Package) 
 	for i := range ssapkgs {
 		ssapkg := ssapkgs[i]
 		pkg := pkgs[i]
-		var cb WalkCallback
-		cb = func(_ ssa.Instruction, v ssa.Value) {
+		var cb WalkValueCallback
+		cb = func(v ssa.Value) {
 			if !IsDefValue(v) {
 				return
 			}
@@ -119,7 +119,7 @@ func FindInPackageAllDefValue(pkgs []*packages.Package, ssapkgs []*ssa.Package) 
 			})
 		}
 		ssaTraversal := NewTraversal()
-		ssaTraversal.WalkInPackage(ssapkg, cb)
+		ssaTraversal.WalkInPackage(ssapkg, nil, cb)
 	}
 
 	return output

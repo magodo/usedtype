@@ -22,8 +22,9 @@ func TestFindExternalPackageStruct(t *testing.T) {
 			[]string{"."},
 			"sdk",
 			nil,
-			`Properties (sdk): struct{Prop1 int "json:\"prop1\""; Prop2 string "json:\"prop2\""}
-Req (sdk): struct{Name string "json:\"name,omitempty\""; *sdk.Properties "json:\"properties,omitempty\""}
+			`Metadata (sdk): struct{Scope string "json:\"scope\""; Version string "json:\"version\""}
+Properties (sdk): struct{Prop1 int "json:\"prop1\""; Prop2 string "json:\"prop2\""}
+Req (sdk): struct{Name string "json:\"name,omitempty\""; *sdk.Properties "json:\"properties,omitempty\""; Metadata sdk.Metadata "json:\"metadata,omitempty\""}
 client (sdk): struct{}
 `,
 		},
@@ -33,7 +34,7 @@ client (sdk): struct{}
 			[]string{"."},
 			"sdk",
 			terraformSchemaTypeFilter,
-			`Req (sdk): struct{Name string "json:\"name,omitempty\""; *sdk.Properties "json:\"properties,omitempty\""}
+			`Req (sdk): struct{Name string "json:\"name,omitempty\""; *sdk.Properties "json:\"properties,omitempty\""; Metadata sdk.Metadata "json:\"metadata,omitempty\""}
 `,
 		},
 	}

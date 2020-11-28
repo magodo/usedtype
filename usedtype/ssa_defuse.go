@@ -50,27 +50,6 @@ type ODUChain struct {
 	// state of the chain
 	state chainState
 
-	// funcArgs is a map, which mapping each Function Parameter to CallCommon Argument.
-	// The purpoes is to allow us relate the parameter with its argument in Function Value procession.
-	// (E.g. if a Function Return some parameter, we can figure out what Value is actual returned)
-	// The function call related Value has following relationships:
-	//
-	//                                        +-> Function
-	//                                        |      ^ (fn)
-	// Go    --+                  (call) 	--+-> MakeClosure
-	//         |                  /           |
-	// Defer --->  CallCommon  ---            +-> Builtin
-	//         |                  \
-	// Call  --+                  (invoke) 	-> TODO
-	//
-	// Other than the Builtin and invoke mode CallCommon, the other paths finally merge to Function.
-	//
-	// Since CallCommon holds the argument Value, at that stage, we will store the argument in this funcArgs
-	// map, under key "stagedParamArgKey" as a staging. Later when we reach to Function Value, we will move
-	// the funcParamArgs from the staged key to the exact key of the parent function. Meanwhile, we will complement
-	// the funcParamArgs with the parameters.
-	// The element will removed from the map when it reaches Return Value as a last step.
-
 	// funcArgs keep track of which argument is used in the CallCommon, which will be later used in the Function Value
 	// to determine to follow which parameter
 	argIndex int
@@ -161,7 +140,7 @@ func (ochain ODUChain) copy() ODUChain {
 }
 
 func (ochain ODUChain) propagateOnReferrers(referrers *[]ssa.Instruction) ODUChains {
-	if referrers == nil && len(*referrers) == 0 {
+	if referrers == nil || len(*referrers) == 0 {
 		ochain.state = chainEndNoUse
 		return []ODUChain{ochain}
 	}
@@ -285,22 +264,42 @@ func (ochain ODUChain) propagateOnInstr(instr ssa.Instruction) ODUChains {
 		return chain.propagateOnValue(instr)
 	case *ssa.Return:
 		fromValue := chain.valueChain[len(chain.valueChain)-1]
-		var idx int
+		var idx = -1
 		for i, result := range instr.Results {
 			if result == fromValue {
 				idx = i
 				break
 			}
 		}
+		assert(idx >= 0)
 		chain.returnIndex = idx
 
-		var newChains []ODUChain
 		// Find the call point on the including function, which are the referrers to this instruction (return of a function)
 		referrers := chain.callPointLookup.FindCallPoint(instr.Parent().Pkg)[instr.Parent()]
 		if referrers == nil {
-			newChains = chain.propagateOnReferrers(nil)
-		} else {
-			newChains = chain.propagateOnReferrers(&referrers)
+			chain.state = chainEndNoUse
+			return []ODUChain{chain}
+		}
+		// Here each referrer is referring to the enclosing function, which is (e.g.) a Call, Defer, etc.
+		// If the referrer itself is a Value, we will go on following its referrers.
+		var newChains []ODUChain
+		for _, referrer := range referrers {
+			if value, ok := referrer.(ssa.Value); ok {
+				chain := chain.copy()
+				if _, ok := chain.seenValues[value]; ok {
+					chain.state = chainEndCyclicUse
+					newChains = append(newChains, chain)
+					continue
+				}
+				chain.valueChain = append(chain.valueChain, value)
+				chain.seenValues[value] = struct{}{}
+				newChains = append(newChains, chain.propagateOnValue(value)...)
+			}
+		}
+		// In case all the referrers are instruction only, we will end this chain.
+		if len(newChains) == 0 {
+			chain.state = chainEndNoUse
+			return []ODUChain{chain}
 		}
 		return newChains
 	case *ssa.RunDefers:
@@ -445,12 +444,14 @@ func (ochain ODUChain) propagateOnValue(value ssa.Value) ODUChains {
 
 func (ochain ODUChain) propagateOnCallCommon(com ssa.CallCommon) ODUChains {
 	fromValue := ochain.valueChain[len(ochain.valueChain)-1]
-	var index int
-	for index = range com.Args {
-		if com.Args[index] == fromValue {
+	var index = -1
+	for i := range com.Args {
+		if com.Args[i] == fromValue {
+			index = i
 			break
 		}
 	}
+	assert(index >= 0)
 	ochain.argIndex = index
 
 	if com.IsInvoke() {
@@ -472,5 +473,5 @@ func (ochain ODUChain) String() string {
 	}
 	fields := ochain.fields.String()
 	return fmt.Sprintf(`%s (%s): %q
-	%s`, ochain.fset.Position(ochain.root.Pos()).String(), ochain.root, fields, strings.Join(positions, "\n\t")) + "\n"
+	%s`, ochain.fset.Position(ochain.root.Pos()).String(), ochain.root, fields, strings.Join(positions, "\n\t"))
 }
