@@ -214,8 +214,15 @@ func TestUseDefBranches_Pair(t *testing.T) {
 		expect   string
 	}{
 		// 0
+		//{
+		//	pathBuildPtrPropInFunctionWithIf,
+		//	[]string{"."},
+		//	"sdk",
+		//	"",
+		//},
+		// 1
 		{
-			pathBuildPtrPropInFunctionWithIf,
+			pathBuildNestedPropInFunction,
 			[]string{"."},
 			"sdk",
 			"",
@@ -238,6 +245,8 @@ func TestUseDefBranches_Pair(t *testing.T) {
 			tmpchains = append(tmpchains, c.String())
 		}
 		sort.Strings(tmpchains)
+		fmt.Println(strings.Join(tmpchains, "\n"))
+		fmt.Println("###########################")
 
 		oduChains := allOduChains.Pair()
 		var chains []string

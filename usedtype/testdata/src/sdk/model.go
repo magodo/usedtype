@@ -6,9 +6,14 @@ type Req struct {
 	Metadata    Metadata `json:"metadata,omitempty"`
 }
 
+type AdditionalInfo struct {
+	Foo string `json:"foo"`
+}
+
 type Metadata struct {
-	Scope   string `json:"scope"`
-	Version string `json:"version"`
+	Scope          string         `json:"scope"`
+	Version        string         `json:"version"`
+	AdditionalInfo AdditionalInfo `json:"additional_info"`
 }
 
 type Properties struct {

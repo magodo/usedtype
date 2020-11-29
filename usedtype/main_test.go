@@ -13,6 +13,7 @@ var (
 	pathValParam    string
 	pathMutateParam string
 	pathMultiReturn string
+	pathBuildNestedPropInFunction string
 	pathBuildPtrPropInFunctionWithIf string
 )
 
@@ -22,6 +23,7 @@ func init() {
 	pathValParam = filepath.Join(pwd, "testdata", "src", "val_param")
 	pathMutateParam = filepath.Join(pwd, "testdata", "src", "mutate_param")
 	pathMultiReturn = filepath.Join(pwd, "testdata", "src", "multi_return")
+	pathBuildNestedPropInFunction = filepath.Join(pwd, "testdata", "src", "build_nested_prop_in_function")
 	pathBuildPtrPropInFunctionWithIf = filepath.Join(pwd, "testdata", "src", "build_ptr_prop_in_function_with_if")
 }
 
