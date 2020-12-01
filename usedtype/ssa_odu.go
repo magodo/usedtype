@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/token"
 	"go/types"
+	"sort"
 	"strings"
 
 	"golang.org/x/tools/go/ssa"
@@ -11,14 +12,24 @@ import (
 
 type chainState string
 
+// whether panic on TODO
+const strict = true
+
 const (
 	chainActive           chainState = "active"
 	chainEndNoUse                    = "not used anywhere"
-	chainEndProvider                 = "waiting for consumer"
-	chainEndConsumer                 = "waiting for provider"
 	chainEndCyclicUse                = "cyclic usage"
 	chainEndOutOfBoundary            = "out of package boundary"
 	chainEndMerged                   = "merged"
+	chainOnHoldProvider              = "waiting for consumer"
+	chainOnHoldConsumer              = "waiting for provider"
+	chainEndNoProvider               = "no provider"
+	chainEndTBD                      = "TBD"
+)
+
+var (
+	pseudoMergeInstr ssa.Instruction
+	pseudoMergeValue ssa.Value
 )
 
 type ODUChain struct {
@@ -28,14 +39,13 @@ type ODUChain struct {
 	// the starting value (def value) of this chain
 	root ssa.Value
 
+	// the type of the root value
+	rootType *types.Named
+
 	// refCount is used to keep track how many times current Value is referenced (&).
 	// This will be added each time it is referenced (&), and will be reduced each time
 	// it is de-referenced (*).
-	refCount int
-
-	// owner keeps track on the current owner of the chain, if the refCount fall to 0, then it become nil
-	// (indicating it is now a hanging value)
-	owner ssa.Value
+	//refCount int
 
 	// instrChain keep track of the def-use instruction chain starting from the firs instruction.
 	instrChain []ssa.Instruction
@@ -72,6 +82,11 @@ type ODUChain struct {
 
 	// for debug purpose only
 	fset *token.FileSet
+
+	// merged chain
+	mergedChain *ODUChain
+
+	rootPosition string
 }
 
 type ODUChains []ODUChain
@@ -87,10 +102,10 @@ func WalkODUChains(value ssa.Value, pkgs []*ssa.Package, fset *token.FileSet) OD
 	}
 
 	chain := ODUChain{
-		pkgBoundary:      pkgBoundary,
-		root:             value,
-		refCount:         ReferenceDepth(value.Type()),
-		owner:            value,
+		pkgBoundary: pkgBoundary,
+		root:        value,
+		rootType:    DereferenceRElem(value.Type()).(*types.Named),
+		//refCount:         ReferenceDepth(value.Type()),
 		instrChain:       []ssa.Instruction{},
 		valueChain:       []ssa.Value{value}, // record root value
 		fields:           []structField{},
@@ -99,8 +114,13 @@ func WalkODUChains(value ssa.Value, pkgs []*ssa.Package, fset *token.FileSet) OD
 		callPointLookup:  callPointLookup,
 		state:            chainActive,
 		fset:             fset,
+		rootPosition:     fset.Position(value.Pos()).String(),
 	}
 	return chain.propagateOnReferrers(value.Referrers())
+}
+
+func (ochain ODUChain) Fields() string {
+	return ochain.fields.String()
 }
 
 func (ochain ODUChain) copy() ODUChain {
@@ -129,13 +149,13 @@ func (ochain ODUChain) copy() ODUChain {
 	}
 
 	return ODUChain{
-		pkgBoundary:      newPkgBoundary,
-		root:             ochain.root,
-		state:            ochain.state,
-		instrChain:       ochain.instrChain,
-		valueChain:       newValueChain,
-		refCount:         ochain.refCount,
-		owner:            ochain.owner,
+		pkgBoundary: newPkgBoundary,
+		root:        ochain.root,
+		rootType:    ochain.rootType,
+		state:       ochain.state,
+		instrChain:  ochain.instrChain,
+		valueChain:  newValueChain,
+		//refCount:         ochain.refCount,
 		fields:           newFields,
 		seenInstructions: newSeenInstructions,
 		seenValues:       newSeenValues,
@@ -143,6 +163,8 @@ func (ochain ODUChain) copy() ODUChain {
 		returnIndex:      ochain.returnIndex,
 		callPointLookup:  ochain.callPointLookup,
 		fset:             ochain.fset,
+		mergedChain:      ochain.mergedChain,
+		rootPosition:     ochain.rootPosition,
 	}
 }
 
@@ -200,20 +222,19 @@ func (ochain ODUChain) propagateOnInstr(instr ssa.Instruction) ODUChains {
 		chain.fields = append(chain.fields,
 			structField{
 				index: instr.Field,
-				t:     instr.X.Type(),
+				base:  DereferenceR(instr.X.Type()).(*types.Named),
 			})
 		return chain.propagateOnValue(instr)
 	case *ssa.FieldAddr:
 		chain.fields = append(chain.fields,
 			structField{
 				index: instr.Field,
-				t:     instr.X.Type(),
+				base:  DereferenceR(instr.X.Type()).(*types.Named),
 			})
 
 		// We are going to track the ownership of a new object from this point,
 		// hence we should reset the refCount.
-		chain.refCount = ReferenceDepth(instr.X.Type().(*types.Pointer).Elem().Underlying().(*types.Struct).Field(instr.Field).Type()) + 1
-		chain.owner = instr.X
+		//chain.refCount = ReferenceDepth(instr.X.Type().(*types.Pointer).Elem().Underlying().(*types.Struct).Field(instr.Field).Type()) + 1
 		return chain.propagateOnValue(instr)
 	case *ssa.Go:
 		return chain.propagateOnCallCommon(instr.Call)
@@ -233,8 +254,7 @@ func (ochain ODUChain) propagateOnInstr(instr ssa.Instruction) ODUChains {
 			chain.state = chainEndNoUse
 			return []ODUChain{chain}
 		}
-		chain.refCount = ReferenceDepth(instr.X.Type()) + 1
-		chain.owner = instr.X
+		//chain.refCount = ReferenceDepth(instr.X.Type()) + 1
 		return chain.propagateOnValue(instr)
 	case *ssa.Jump:
 		panic("should never happen")
@@ -249,7 +269,12 @@ func (ochain ODUChain) propagateOnInstr(instr ssa.Instruction) ODUChains {
 		chain.state = chainEndNoUse
 		return []ODUChain{chain}
 	case *ssa.MakeClosure:
-		panic("TODO")
+		if strict {
+			panic("TODO")
+		} else {
+			chain.state = chainEndTBD
+			return []ODUChain{chain}
+		}
 	case *ssa.MakeInterface:
 		return chain.propagateOnValue(instr)
 	case *ssa.MakeMap:
@@ -315,7 +340,12 @@ func (ochain ODUChain) propagateOnInstr(instr ssa.Instruction) ODUChains {
 		chain.state = chainEndNoUse
 		return []ODUChain{chain}
 	case *ssa.Select:
-		panic("TODO")
+		if strict {
+			panic("TODO")
+		} else {
+			chain.state = chainEndTBD
+			return []ODUChain{chain}
+		}
 	case *ssa.Send:
 		chain.state = chainEndNoUse
 		return []ODUChain{chain}
@@ -327,11 +357,18 @@ func (ochain ODUChain) propagateOnInstr(instr ssa.Instruction) ODUChains {
 		}
 		return chain.propagateOnValue(instr)
 	case *ssa.Store:
+		// If the value to be stored is not a Named Structure, then we will end this chain.
+		if !UnderlyingNamedStructOrArrayOfNamedStruct(instr.Addr.Type()) {
+			chain.state = chainEndMerged
+			return []ODUChain{chain}
+		}
+
+		// Check whether current chain is the value provider or consumer
 		fromValue := chain.valueChain[len(chain.valueChain)-1]
 		if fromValue == instr.Val {
-			chain.state = chainEndProvider
+			chain.state = chainOnHoldProvider
 		} else {
-			chain.state = chainEndConsumer
+			chain.state = chainOnHoldConsumer
 		}
 		return []ODUChain{chain}
 	case *ssa.TypeAssert:
@@ -387,7 +424,12 @@ func (ochain ODUChain) propagateOnValue(value ssa.Value) ODUChains {
 	case *ssa.FieldAddr:
 		return chain.propagateOnReferrers(value.Referrers())
 	case *ssa.FreeVar:
-		panic("TODO")
+		if strict {
+			panic("TODO")
+		} else {
+			chain.state = chainEndTBD
+			return []ODUChain{chain}
+		}
 	case *ssa.Function:
 		// Only keep the ochain in the boundary of current package
 		if value.Package() != nil {
@@ -417,7 +459,12 @@ func (ochain ODUChain) propagateOnValue(value ssa.Value) ODUChains {
 	case *ssa.MakeSlice:
 		panic("will never happen")
 	case *ssa.MakeClosure:
-		panic("TODO")
+		if strict {
+			panic("TODO")
+		} else {
+			chain.state = chainEndTBD
+			return []ODUChain{chain}
+		}
 	case *ssa.Next:
 		return chain.propagateOnReferrers(value.Referrers())
 	case *ssa.Parameter:
@@ -427,7 +474,12 @@ func (ochain ODUChain) propagateOnValue(value ssa.Value) ODUChains {
 	case *ssa.Range:
 		return chain.propagateOnReferrers(value.Referrers())
 	case *ssa.Select:
-		panic("TODO")
+		if strict {
+			panic("TODO")
+		} else {
+			chain.state = chainEndTBD
+			return []ODUChain{chain}
+		}
 	case *ssa.Slice:
 		return chain.propagateOnReferrers(value.Referrers())
 	case *ssa.TypeAssert:
@@ -435,17 +487,18 @@ func (ochain ODUChain) propagateOnValue(value ssa.Value) ODUChains {
 	case *ssa.UnOp:
 		switch value.Op {
 		case token.ARROW:
-			panic("TODO")
+			if strict {
+				panic("TODO")
+			} else {
+				chain.state = chainEndTBD
+				return []ODUChain{chain}
+			}
 		case token.NOT,
 			token.SUB,
 			token.XOR:
 			return chain.propagateOnReferrers(value.Referrers())
 		case token.MUL:
-			chain.refCount--
-			assert(chain.refCount >= 0)
-			if chain.refCount == 0 {
-				ochain.owner = nil
-			}
+			//chain.refCount--
 			return chain.propagateOnReferrers(value.Referrers())
 		default:
 			panic("will never happen")
@@ -455,8 +508,19 @@ func (ochain ODUChain) propagateOnValue(value ssa.Value) ODUChains {
 	}
 }
 
-func (ochain ODUChain) propagateOnCallCommon(com ssa.CallCommon) ODUChains {
-	fromValue := ochain.valueChain[len(ochain.valueChain)-1]
+func (chain ODUChain) propagateOnCallCommon(com ssa.CallCommon) ODUChains {
+	fromValue := chain.valueChain[len(chain.valueChain)-1]
+
+	if com.IsInvoke() {
+		if strict {
+			panic("TODO")
+		} else {
+			chain.state = chainEndTBD
+			return []ODUChain{chain}
+		}
+	}
+
+	// call mode
 	var index = -1
 	for i := range com.Args {
 		if com.Args[i] == fromValue {
@@ -465,83 +529,110 @@ func (ochain ODUChain) propagateOnCallCommon(com ssa.CallCommon) ODUChains {
 		}
 	}
 	assert(index >= 0)
-	ochain.argIndex = index
-
-	if com.IsInvoke() {
-		// invoke mode (dynamic dispatch on interface)
-		panic("TODO")
-	}
-	return ochain.propagateOnValue(com.Value)
+	chain.argIndex = index
+	return chain.propagateOnValue(com.Value)
 }
 
-func (chain ODUChain) append(ochain ODUChain) ODUChain {
-	newchain := chain.copy()
-	newchain.fields = append(newchain.fields, ochain.fields...)
-	newchain.state = chainEndMerged
-	return newchain
+// consume consumes a set of value provider chains, which starts from the same root value.
+func (chain ODUChain) consume(cluster ODUChainCluster, root ssa.Value) ODUChains {
+	providers, ok := cluster[root]
+	if !ok {
+		chain := chain.copy()
+		chain.state = chainEndNoProvider
+		return []ODUChain{chain}
+	}
+
+	newChains := []ODUChain{}
+	var mergeType types.Type = chain.rootType
+	if l := len(chain.fields); l > 0 {
+		lastField := chain.fields[l-1]
+		mergeType = DereferenceRElem(lastField.base.Underlying().(*types.Struct).Field(lastField.index).Type()).(*types.Named)
+	}
+
+providerLoop:
+	for pidx, provider := range providers {
+		chain := chain.copy()
+
+		if types.Identical(provider.rootType, mergeType) {
+			for i := 0; i < len(provider.fields); i++ {
+				chain.fields = append(chain.fields, provider.fields[i])
+			}
+			chain.mergedChain = &providers[pidx]
+			chain.state = chainEndMerged
+			providers[pidx].state = chainEndMerged
+			newChains = append(newChains, chain)
+			continue
+		}
+
+		for idx, field := range provider.fields {
+			if !types.Identical(field.Type(), mergeType) {
+				continue
+			}
+
+			for i := idx + 1; i < len(provider.fields); i++ {
+				chain.fields = append(chain.fields, provider.fields[i])
+			}
+			chain.mergedChain = &providers[pidx]
+			chain.state = chainEndMerged
+			providers[pidx].state = chainEndMerged
+			newChains = append(newChains, chain)
+			continue providerLoop
+		}
+
+		// Reaching here means the provider chain does not have the value of expected type which the
+		// consumer chain is waiting for.
+		assert(provider.state != chainOnHoldProvider)
+		chain.state = chainEndNoProvider
+		newChains = append(newChains, chain)
+	}
+	return newChains
 }
 
 func (chain ODUChain) String() string {
-	var positions []string
-
-	for _, instr := range chain.instrChain {
-		suffix := ""
-		if _, ok := instr.(*ssa.Phi); ok {
-			suffix = " (phi)"
-		}
-		positions = append(positions, chain.fset.Position(instr.Pos()).String()+suffix)
+	// estimate padding length
+	padLength := len(chain.root.String()) + 50
+	if padLength < 100 {
+		padLength = 100
+	}
+	values := []string{fmt.Sprintf("%-*s %s", padLength, chain.root, chain.fset.Position(chain.root.Pos()).String())}
+	for _, value := range chain.instrChain {
+		values = append(values, fmt.Sprintf("%-*s %s", padLength, value, chain.fset.Position(value.Pos()).String()))
 	}
 	fields := chain.fields.String()
-	return fmt.Sprintf(`%s (%s): %q
+
+	out := fmt.Sprintf(`Field: %q (%s)
 	%s
-	%s`, chain.fset.Position(chain.root.Pos()).String(), chain.root, fields, strings.Join(positions, "\n\t"), chain.state)
+`, fields, chain.state,
+		strings.Join(values, "\n\t"))
+
+	if chain.mergedChain != nil {
+		out += fmt.Sprintf(`    ## merged with ##
+%s`, chain.mergedChain.String())
+	}
+	return out
 }
 
-func (chains ODUChains) Pair() ODUChains {
-	var newChains []ODUChain
-	// It is possible that one instruction corresponds to multiple providers.
-	providerCache := map[ssa.Instruction][]ODUChain{}
-
+func (chains ODUChains) String() string {
+	var output []string
 	for _, chain := range chains {
-		if chain.state == chainEndProvider {
-			lastInstr := chain.instrChain[len(chain.instrChain)-1]
-			providerCache[lastInstr] = append(providerCache[lastInstr], chain)
-		}
+		output = append(output, chain.String())
 	}
+	sort.Strings(output)
+	return strings.Join(output, "\n")
+}
 
+// CanProvide tells whether current set of chains can provide value. We regard chains derived from same root to be all resolved,
+// and has at least one provider, then we say this set of chains provide something.
+func (chains ODUChains) CanProvide() bool {
+	var canProvide bool
 	for _, chain := range chains {
 		switch chain.state {
-		case chainEndProvider:
-			continue
-		case chainEndConsumer:
-			lastInstr := chain.instrChain[len(chain.instrChain)-1]
-			if providers, ok := providerCache[lastInstr]; ok {
-				for _, provider := range providers {
-					// We should find among all the chains for those belongs to the same "owner" as current provider chain.
-					// and then append them to the current consumer chain.
-					for _, c := range chains {
-						if c.owner == provider.owner {
-							newChains = append(newChains, chain.append(c))
-						}
-					}
-				}
-				delete(providerCache, lastInstr)
-			}
-		case chainEndNoUse,
-			chainEndCyclicUse,
-			chainEndOutOfBoundary:
-			fmt.Println(chain.String())
-			newChains = append(newChains, chain)
-		default:
-			panic("will never happen")
+		case chainActive,
+			chainOnHoldConsumer:
+			return false
+		case chainOnHoldProvider:
+			canProvide = true
 		}
 	}
-
-	// There might be remaining chains in the cache that have no pairs, keeping them unpaired will not impact
-	// struct field coverage, e.g., consumer chains waiting for provider like const value, function with no
-	// parameter or non-struct parameter. Hence, we will simply keep them.
-
-	assert(len(providerCache) == 0)
-
-	return newChains
+	return canProvide
 }

@@ -8,42 +8,30 @@ import (
 
 type structField struct {
 	index int
-	t     types.Type
+	base  *types.Named
 }
 
 type structFields []structField
 
+func (field structField) Equal(ofield structField) bool {
+	typeEqual := types.Identical(field.base, ofield.base)
+	//return types.Identical(field.base, ofield.base) && field.index == ofield.index
+	return typeEqual && field.index == ofield.index
+}
+
+func (field structField) Type() types.Type {
+	return field.base.Underlying().(*types.Struct).Field(field.index).Type()
+}
+
 func (fields structFields) String() string {
-	var underlyingNamed func(t types.Type) *types.Named
-	underlyingNamed = func(t types.Type) *types.Named {
-		switch t := t.(type) {
-		case *types.Named:
-			return t
-		case *types.Pointer:
-			return underlyingNamed(t.Elem())
-		default:
-			panic("Not gonna happen")
-		}
-	}
-
-	underlyingStruct := func(t types.Type) *types.Struct {
-		named := underlyingNamed(t)
-		switch v := named.Underlying().(type) {
-		case *types.Struct:
-			return v
-		default:
-			panic("Not gonna happen")
-		}
-	}
-
 	fieldStrs := []string{}
 	for idx, field := range fields {
 		if idx == 0 {
-			named := underlyingNamed(field.t)
+			named := field.base
 			fieldStrs = append(fieldStrs, named.Obj().Name())
 		}
 
-		strct := underlyingStruct(field.t)
+		strct := field.base.Underlying().(*types.Struct)
 		tag := reflect.StructTag(strct.Tag(field.index))
 		jsonTag := tag.Get("json")
 		idx := strings.Index(jsonTag, ",")

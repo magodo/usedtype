@@ -21,18 +21,30 @@ func (l *CallPointLookup) FindCallPoint(pkg *ssa.Package) map[*ssa.Function][]ss
 		case *ssa.Call:
 			com := instr.Call
 			if com.IsInvoke() {
-				panic("TODO")
+				if strict {
+					panic("TODO")
+				} else {
+					return
+				}
 			}
 			switch v := com.Value.(type) {
 			case *ssa.Function:
 				c[v] = append(c[v], instr)
 				return
 			case *ssa.MakeClosure:
-				panic("TODO")
+				if strict {
+					panic("TODO")
+				} else {
+					return
+				}
 			case *ssa.Builtin:
 				return
 			default:
-				panic("will never happen")
+				if strict {
+					panic("TODO")
+				} else {
+					return
+				}
 			}
 		}
 	}, nil,

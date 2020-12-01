@@ -2,6 +2,7 @@ package usedtype
 
 import (
 	"fmt"
+
 	"golang.org/x/tools/go/ssa"
 )
 
@@ -44,7 +45,7 @@ func (t *Traversal) WalkInPackage(pkg *ssa.Package, icb WalkInstrCallback, vcb W
 			// nothing to do, since it will not appear any Value of target type
 		case *ssa.Global:
 			if _, ok := t.seen.values[m]; ok {
-				return
+				continue
 			}
 			t.seen.values[m] = struct{}{}
 			if vcb != nil {
@@ -92,7 +93,7 @@ func (t *Traversal) walkInstructions(pkg *ssa.Package, fn *ssa.Function, icb Wal
 			}
 			t.seen.instructions[instr] = struct{}{}
 
-			if icb != nil{
+			if icb != nil {
 				icb(instr)
 			}
 

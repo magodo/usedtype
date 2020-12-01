@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/tools/go/ssa"
+
 	"github.com/magodo/usedtype/usedtype"
 	"github.com/stretchr/testify/require"
 )
@@ -213,48 +215,57 @@ func TestUseDefBranches_Pair(t *testing.T) {
 		epattern string
 		expect   string
 	}{
-		// 0
+		//// 0
 		//{
 		//	pathBuildPtrPropInFunctionWithIf,
 		//	[]string{"."},
 		//	"sdk",
 		//	"",
 		//},
-		// 1
+		//// 1
+		//{
+		//	pathBuildNestedPropInFunction,
+		//	[]string{"."},
+		//	"sdk",
+		//	"",
+		//},
+		// 2
 		{
-			pathBuildNestedPropInFunction,
+			pathArrayProp,
 			[]string{"."},
 			"sdk",
 			"",
 		},
+		//// 3
+		//{
+		//	pathInvoke,
+		//	[]string{"."},
+		//	"sdk",
+		//	"",
+		//},
 	}
 
 	for idx, c := range cases {
 		pkgs, ssapkgs, err := usedtype.BuildPackages(c.dir, c.patterns)
 		require.NoError(t, err, idx)
 		ssadefs := usedtype.FindInPackageAllDefValue(pkgs, ssapkgs)
-		var allOduChains usedtype.ODUChains
+		var allOduChains usedtype.ODUChainCluster = map[ssa.Value]usedtype.ODUChains{}
 		for _, value := range ssadefs {
-			oduChains := usedtype.WalkODUChains(value.Value, ssapkgs, value.Fset)
-			for _, chain := range oduChains {
-				allOduChains = append(allOduChains, chain)
+			allOduChains[value.Value] = usedtype.WalkODUChains(value.Value, ssapkgs, value.Fset)
+		}
+		//fmt.Print(allOduChains.String())
+
+		allOduChains.Pair()
+
+		fmt.Print(allOduChains.String())
+		structNodes := usedtype.FindInPackageDefValueOfTargetStructType(ssapkgs, usedtype.FindExternalPackageStruct(pkgs, c.epattern, terraformSchemaTypeFilter))
+		for k, values := range structNodes {
+			fmt.Println(k.TypeName)
+			for _, v := range values {
+				for _, chain := range allOduChains[v] {
+					fmt.Println(chain.Fields())
+				}
 			}
 		}
-		var tmpchains []string
-		for _, c := range allOduChains {
-			tmpchains = append(tmpchains, c.String())
-		}
-		sort.Strings(tmpchains)
-		fmt.Println(strings.Join(tmpchains, "\n"))
-		fmt.Println("###########################")
-
-		oduChains := allOduChains.Pair()
-		var chains []string
-		for _, c := range oduChains {
-			chains = append(chains, c.String())
-		}
-		sort.Strings(chains)
-		fmt.Println(strings.Join(chains, "\n"))
-		//require.Equal(t, c.expect, "\n"+strings.Join(chains, "\n")+"\n", idx)
 	}
 }

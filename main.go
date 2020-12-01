@@ -7,6 +7,8 @@ import (
 	"log"
 	"os"
 
+	"golang.org/x/tools/go/ssa"
+
 	"github.com/magodo/usedtype/usedtype"
 	"golang.org/x/tools/go/packages"
 )
@@ -37,13 +39,23 @@ func main() {
 
 	// Find all ssa def node of the current package.
 	ssadefs := usedtype.FindInPackageAllDefValue(pkgs, ssapkgs)
-	var oduChains []usedtype.ODUChain
+
+	var allOduChains usedtype.ODUChainCluster = map[ssa.Value]usedtype.ODUChains{}
 	for _, value := range ssadefs {
-		oduChains = usedtype.WalkODUChains(value.Value, ssapkgs, value.Fset)
+		allOduChains[value.Value] = usedtype.WalkODUChains(value.Value, ssapkgs, value.Fset)
 	}
 
-	for _, chain := range oduChains {
-		fmt.Println(chain)
+	fmt.Println(allOduChains.String())
+	allOduChains.Pair()
+
+	structNodes := usedtype.FindInPackageDefValueOfTargetStructType(ssapkgs, targetStructs)
+	for k, values := range structNodes {
+		fmt.Println(k.TypeName)
+		for _, v := range values {
+			for _, chain := range allOduChains[v] {
+				fmt.Println(chain.Fields())
+			}
+		}
 	}
 }
 

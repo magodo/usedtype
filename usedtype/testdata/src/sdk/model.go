@@ -4,6 +4,7 @@ type Req struct {
 	Name        string `json:"name,omitempty"`
 	*Properties `json:"properties,omitempty"`
 	Metadata    Metadata `json:"metadata,omitempty"`
+	Regions *[]Region `json:"regions,omitempty"`
 }
 
 type AdditionalInfo struct {
@@ -20,3 +21,8 @@ type Properties struct {
 	Prop1 int    `json:"prop1"`
 	Prop2 string `json:"prop2"`
 }
+
+type Region struct {
+	State string `json:"state"`
+}
+
