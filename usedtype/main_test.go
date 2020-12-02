@@ -9,26 +9,14 @@ import (
 )
 
 var (
-	pathA                            string
-	pathInvoke                       string
-	pathArrayProp                    string
-	pathValParam                     string
-	pathMutateParam                  string
-	pathMultiReturn                  string
-	pathBuildNestedPropInFunction    string
-	pathBuildPtrPropInFunctionWithIf string
+	pathA string
+	pathB string
 )
 
 func init() {
 	pwd, _ := os.Getwd()
 	pathA = filepath.Join(pwd, "testdata", "src", "a")
-	pathInvoke = filepath.Join(pwd, "testdata", "src", "invoke")
-	pathArrayProp = filepath.Join(pwd, "testdata", "src", "array_prop")
-	pathValParam = filepath.Join(pwd, "testdata", "src", "val_param")
-	pathMutateParam = filepath.Join(pwd, "testdata", "src", "mutate_param")
-	pathMultiReturn = filepath.Join(pwd, "testdata", "src", "multi_return")
-	pathBuildNestedPropInFunction = filepath.Join(pwd, "testdata", "src", "build_nested_prop_in_function")
-	pathBuildPtrPropInFunctionWithIf = filepath.Join(pwd, "testdata", "src", "build_ptr_prop_in_function_with_if")
+	pathB = filepath.Join(pwd, "testdata", "src", "b")
 }
 
 func terraformSchemaTypeFilter(epkg *packages.Package, t *types.Struct) bool {

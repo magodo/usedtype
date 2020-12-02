@@ -16,7 +16,7 @@ import (
 const honorJSONSkip = true
 
 type structField struct {
-	base  *types.Struct
+	base  *types.Struct // This is always an underlying type of a Named type, so it is canonical.:w
 	index int
 }
 
@@ -151,11 +151,6 @@ func (m StructDirectUsageMap) record(pkg *packages.Package, instr ssa.Instructio
 	m[nt][u] = append(m[nt][u], pkg.Fset.Position(pos))
 }
 
-type StructFullUsage struct {
-	root         *types.Named
-	nestedFields map[structField]StructFieldFullUsage
-}
-
 type StructFieldFullUsage struct {
 	dm             StructDirectUsageMap
 	field          structField
@@ -163,10 +158,42 @@ type StructFieldFullUsage struct {
 	seenStructures map[*types.Named]struct{}
 }
 
+type StructFullUsages map[*types.Named]StructFullUsage
+
+type StructFullUsage struct {
+	root         *types.Named
+	nestedFields map[structField]StructFieldFullUsage
+}
+
 func (fu StructFullUsage) String() string {
 	var out = []string{fu.root.String()}
-	for _, nestedField := range fu.nestedFields {
-		out = append(out, nestedField.StringWithIndent(2))
+	indexes := make([]int, len(fu.nestedFields))
+	tmpM := map[int]StructFieldFullUsage{}
+	cnt := 0
+	for k, v := range fu.nestedFields {
+		indexes[cnt] = k.index
+		tmpM[k.index] = v
+		cnt++
+	}
+	sort.Ints(indexes)
+
+	for _, idx := range indexes {
+		out = append(out, tmpM[idx].StringWithIndent(2))
+	}
+	return strings.Join(out, "\n")
+}
+
+func (fus StructFullUsages) String() string {
+	var keys comparableNamed = make([]*types.Named, len(fus))
+	cnt := 0
+	for k := range fus {
+		keys[cnt] = k
+		cnt++
+	}
+	sort.Sort(keys)
+	var out []string
+	for _, key := range keys {
+		out = append(out, fus[key].String())
 	}
 	return strings.Join(out, "\n")
 }
@@ -178,10 +205,29 @@ func (ffu StructFieldFullUsage) String() string {
 func (ffu StructFieldFullUsage) StringWithIndent(ident int) string {
 	prefix := strings.Repeat("  ", ident)
 	var out = []string{prefix + ffu.field.String()}
-	for _, nestedField := range ffu.nestedFields {
-		out = append(out, nestedField.StringWithIndent(ident+2))
+
+	indexes := make([]int, len(ffu.nestedFields))
+	tmpM := map[int]StructFieldFullUsage{}
+	cnt := 0
+	for k, v := range ffu.nestedFields {
+		indexes[cnt] = k.index
+		tmpM[k.index] = v
+		cnt++
+	}
+	sort.Ints(indexes)
+
+	for _, idx := range indexes {
+		out = append(out, tmpM[idx].StringWithIndent(ident+2))
 	}
 	return strings.Join(out, "\n")
+}
+
+func BuildStructFullUsages(dm StructDirectUsageMap, rootSet StructSet) StructFullUsages {
+	us := map[*types.Named]StructFullUsage{}
+	for root := range rootSet {
+		us[root] = BuildStructFullUsage(dm, root)
+	}
+	return us
 }
 
 func BuildStructFullUsage(dm StructDirectUsageMap, root *types.Named) StructFullUsage {

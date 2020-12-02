@@ -10,8 +10,7 @@ func main() {
 	}
 	req.Properties.Prop1 = 1
 	req.Properties = buildProp(true)
-	client := sdk.BuildClient()
-	client.CreateOrUpdate(req)
+	_ = req
 }
 
 func buildProp(b bool) *sdk.Properties {

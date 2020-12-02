@@ -40,10 +40,8 @@ func main() {
 	//		fmt.Printf("===\n%s\n===\n%s\n", t.String(), u)
 	//	}
 	//}
-	for k := range targetStructSets {
-		fu := usedtype.BuildStructFullUsage(directUsage, k)
-		fmt.Println(fu)
-	}
+	fus := usedtype.BuildStructFullUsages(directUsage, targetStructSets)
+	fmt.Println(fus)
 
 	//
 	//// Find all ssa def node of the current package.

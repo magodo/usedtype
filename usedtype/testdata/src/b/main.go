@@ -10,6 +10,12 @@ func main() {
 	_ = req
 }
 
+func foo() {
+	prop := buildProp()
+	prop.Prop1 = 1
+	return
+}
+
 func buildProp() *sdk.Properties {
 	return &sdk.Properties{}
 }
