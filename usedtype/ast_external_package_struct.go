@@ -1,54 +1,18 @@
 package usedtype
 
 import (
-	"fmt"
 	"go/types"
-	"regexp"
-	"sort"
-	"strconv"
-	"strings"
-
 	"golang.org/x/tools/go/packages"
+	"regexp"
 )
 
-// The Object.Id() not always guarantees to return a qualified ID for an object.
-type NamedTypeId struct {
-	Pkg      *packages.Package
-	TypeName string
-}
+type StructSet map[*types.Named]struct{}
 
-func (id NamedTypeId) String() string {
-	return fmt.Sprintf("%s (%s)", id.TypeName, id.Pkg.PkgPath)
-}
+type FilterFunc func(epkg *packages.Package, t *types.Named) bool
 
-type StructMap map[NamedTypeId]*types.Struct
-
-func (m StructMap) String() string {
-	idstrings := []string{}
-	ids := []NamedTypeId{}
-	i := 0
-	for k := range m {
-		idstrings = append(idstrings, fmt.Sprintf("%s:%s:%d", k.Pkg.PkgPath, k.TypeName, i))
-		ids = append(ids, k)
-		i++
-	}
-	sort.Strings(idstrings)
-
-	output := []string{}
-	for _, idstr := range idstrings {
-		parts := strings.Split(idstr, ":")
-		idx, _ := strconv.Atoi(parts[2])
-		id := ids[idx]
-		output = append(output, fmt.Sprintf("%s: %s\n", id, m[id]))
-	}
-	return strings.Join(output, "")
-}
-
-type FilterFunc func(epkg *packages.Package, t *types.Struct) bool
-
-func FindExternalPackageStruct(pkgs []*packages.Package, pattern string, filter FilterFunc) StructMap {
+func FindExternalPackageStruct(pkgs []*packages.Package, pattern string, filter FilterFunc) StructSet {
 	p := regexp.MustCompile(pattern)
-	targetStructs := map[NamedTypeId]*types.Struct{}
+	tset:= map[*types.Named]struct{}{}
 	for _, pkg := range pkgs {
 		for epkgImportPath, epkg := range pkg.Imports {
 			if !p.MatchString(epkgImportPath) {
@@ -62,21 +26,16 @@ func FindExternalPackageStruct(pkgs []*packages.Package, pattern string, filter 
 				if !ok {
 					continue
 				}
-				t, ok := namedType.Underlying().(*types.Struct)
-				if !ok {
+				if ! IsUnderlyingNamedStruct(namedType) {
 					continue
 				}
-				if filter != nil && !filter(epkg, t) {
+				if filter != nil && !filter(epkg, namedType) {
 					continue
 				}
 
-				id := NamedTypeId{
-					Pkg:      epkg,
-					TypeName: obj.Name(),
-				}
-				targetStructs[id] = t
+				tset[namedType] = struct{}{}
 			}
 		}
 	}
-	return targetStructs
+	return tset
 }

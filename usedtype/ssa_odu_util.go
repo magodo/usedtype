@@ -23,7 +23,7 @@ func IsDefValue(v ssa.Value) bool {
 		return false
 	}
 
-	return UnderlyingNamedStructOrArrayOfNamedStruct(v.Type())
+	return IsUnderlyingNamedStructOrArrayOfNamedStruct(v.Type())
 }
 
 // ReferenceDepth return the reference level of a given SSA value.
@@ -60,7 +60,7 @@ func DereferenceRElem(t types.Type) types.Type {
 	return t
 }
 
-func UnderlyingNamedStruct(t types.Type) bool {
+func IsUnderlyingNamedStruct(t types.Type) bool {
 	t = DereferenceR(t)
 	nt, ok := t.(*types.Named)
 	if !ok {
@@ -72,15 +72,15 @@ func UnderlyingNamedStruct(t types.Type) bool {
 	return true
 }
 
-func UnderlyingNamedStructOrArrayOfNamedStruct(t types.Type) bool {
+func IsUnderlyingNamedStructOrArrayOfNamedStruct(t types.Type) bool {
 	t = DereferenceR(t)
 	switch t := t.(type) {
 	case *types.Named:
-		return UnderlyingNamedStruct(t)
+		return IsUnderlyingNamedStruct(t)
 	case *types.Array:
-		return UnderlyingNamedStructOrArrayOfNamedStruct(t.Elem())
+		return IsUnderlyingNamedStructOrArrayOfNamedStruct(t.Elem())
 	case *types.Slice:
-		return UnderlyingNamedStructOrArrayOfNamedStruct(t.Elem())
+		return IsUnderlyingNamedStructOrArrayOfNamedStruct(t.Elem())
 	default:
 		return false
 	}

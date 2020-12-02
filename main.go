@@ -7,8 +7,6 @@ import (
 	"log"
 	"os"
 
-	"golang.org/x/tools/go/ssa"
-
 	"github.com/magodo/usedtype/usedtype"
 	"golang.org/x/tools/go/packages"
 )
@@ -33,33 +31,44 @@ func main() {
 	}
 
 	// Analyze all the target external packages and get a list of types.Object
-	targetStructs := usedtype.FindExternalPackageStruct(pkgs, *pattern, terraformSchemaTypeFilter)
-	//fmt.Println(targetStructs)
-	_ = targetStructs
+	targetStructSets := usedtype.FindExternalPackageStruct(pkgs, *pattern, terraformSchemaTypeFilter)
 
-	// Find all ssa def node of the current package.
-	ssadefs := usedtype.FindInPackageAllDefValue(pkgs, ssapkgs)
+	directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
 
-	var allOduChains usedtype.ODUChainCluster = map[ssa.Value]usedtype.ODUChains{}
-	for _, value := range ssadefs {
-		allOduChains[value.Value] = usedtype.WalkODUChains(value.Value, ssapkgs, value.Fset)
+	//for t := range targetStructSets {
+	//	if u, ok := usage[t]; ok {
+	//		fmt.Printf("===\n%s\n===\n%s\n", t.String(), u)
+	//	}
+	//}
+	for k := range targetStructSets {
+		fu := usedtype.BuildStructFullUsage(directUsage, k)
+		fmt.Println(fu)
 	}
 
-	fmt.Println(allOduChains.String())
-	allOduChains.Pair()
-
-	structNodes := usedtype.FindInPackageDefValueOfTargetStructType(ssapkgs, targetStructs)
-	for k, values := range structNodes {
-		fmt.Println(k.TypeName)
-		for _, v := range values {
-			for _, chain := range allOduChains[v] {
-				fmt.Println(chain.Fields())
-			}
-		}
-	}
+	//
+	//// Find all ssa def node of the current package.
+	//ssadefs := usedtype.FindInPackageAllDefValue(pkgs, ssapkgs)
+	//
+	//var allOduChains usedtype.ODUChainCluster = map[ssa.Value]usedtype.ODUChains{}
+	//for _, value := range ssadefs {
+	//	allOduChains[value.Value] = usedtype.WalkODUChains(value.Value, ssapkgs, value.Fset)
+	//}
+	//
+	//fmt.Println(allOduChains.String())
+	//allOduChains.Pair()
+	//
+	//structNodes := usedtype.FindInPackageDefValueOfTargetStructType(ssapkgs, targetStructs)
+	//for k, values := range structNodes {
+	//	fmt.Println(k.TypeName)
+	//	for _, v := range values {
+	//		for _, chain := range allOduChains[v] {
+	//			fmt.Println(chain.Fields())
+	//		}
+	//	}
+	//}
 }
 
-func terraformSchemaTypeFilter(epkg *packages.Package, t *types.Struct) bool {
+func terraformSchemaTypeFilter(epkg *packages.Package, t *types.Named) bool {
 	scope := epkg.Types.Scope()
 	for _, topType := range scope.Names() {
 		et := scope.Lookup(topType).Type()
@@ -82,15 +91,7 @@ func terraformSchemaTypeFilter(epkg *packages.Package, t *types.Struct) bool {
 			}
 			signature := c.Type().(*types.Signature)
 			lastParam := signature.Params().At(signature.Params().Len() - 1)
-			nt, ok := lastParam.Type().(*types.Named)
-			if !ok {
-				continue
-			}
-			st, ok := nt.Underlying().(*types.Struct)
-			if !ok {
-				continue
-			}
-			if types.Identical(st, t) {
+			if types.Identical(lastParam.Type(), t) {
 				return true
 			}
 		default:
