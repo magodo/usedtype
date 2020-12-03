@@ -1,6 +1,7 @@
 package usedtype_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/magodo/usedtype/usedtype"
@@ -19,18 +20,24 @@ func TestFindInPackageFieldUsage(t *testing.T) {
 			pathA,
 			[]string{"."},
 			"sdk",
-			`sdk.AdditionalInfo
-sdk.Metadata
-sdk.Properties
-    Prop1 (prop1)
-    Prop2 (prop2)
-sdk.Region
-sdk.Req
-    Name (name)
-    Properties (properties)
-        Prop1 (prop1)
-        Prop2 (prop2)
-sdk.client`,
+			`
+sdk.ModelA
+    String (string)
+    Property (property)
+        Int (int)
+    PointerOfProperty (pointer_of_property)
+        Int (int)
+    ArrayOfString (array_of_string)
+    PointerOfArrayOfString (pointer_of_array_of_string)
+    ArrayOfProperty (array_of_property)
+        Int (int)
+    PointerOfArrayOfProperty (pointer_of_array_of_property)
+        Int (int)
+    ArrayOfPointerOfProperty (array_of_pointer_of_property)
+        Int (int)
+sdk.Property
+    Int (int)
+`,
 		},
 	}
 
@@ -40,6 +47,7 @@ sdk.client`,
 		directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
 		targetRootSet := usedtype.FindExternalPackageStruct(pkgs, c.epattern, nil)
 		fus := usedtype.BuildStructFullUsages(directUsage, targetRootSet)
-		require.Equal(t, c.expect, fus.String(), idx)
+		fmt.Println(fus.String())
+		require.Equal(t, c.expect, "\n"+fus.String()+"\n", idx)
 	}
 }

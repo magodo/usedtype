@@ -5,22 +5,27 @@ import (
 )
 
 func main() {
-	req := sdk.Req{
-		Name: "name",
+	req := sdk.ModelA{
+		String: "foo",
 	}
-	req.Properties.Prop1 = 1
-	req.Properties = buildProp(true)
+
+	prop := buildProp()
+	req.Property = prop
+	req.PointerOfProperty = &prop
+
+	sarr := []string{"a"}
+	req.ArrayOfString = sarr
+	req.PointerOfArrayOfString = &sarr
+
+	parr := []sdk.Property{prop}
+	req.ArrayOfProperty = parr
+	req.PointerOfArrayOfProperty = &parr
+
+	pparr := []*sdk.Property{&prop}
+	req.ArrayOfPointerOfProperty = pparr
 	_ = req
 }
 
-func buildProp(b bool) *sdk.Properties {
-	var prop *sdk.Properties
-	if b {
-		prop = &sdk.Properties{}
-		prop.Prop1 = 1
-	} else {
-		prop = &sdk.Properties{}
-		prop.Prop2 = "foo"
-	}
-	return prop
+func buildProp() sdk.Property {
+	return sdk.Property{Int: 1}
 }
