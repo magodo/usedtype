@@ -7,24 +7,39 @@ import (
 )
 
 type StructFullUsageKey struct {
-	named   *types.Named
-	variant *types.Named // non-nil only when named is a named interface_property
+	Named   *types.Named
+	Variant *types.Named // non-nil only when Named is a Named interface_property
 }
 
 type StructFullUsageKeys []StructFullUsageKey
 
 type StructFieldFullUsageKey struct {
 	StructField
-	variant *types.Named // non-nil only when the StructField corresponds to an interface_property
+	Variant *types.Named // non-nil only when the StructField corresponds to an interface_property
 }
 
 type StructFieldFullUsageKeys []StructFieldFullUsageKey
 
-func (key StructFullUsageKey) String() string {
-	if key.variant == nil {
-		return key.named.String()
-	}
-	return key.named.String() + " [" + key.variant.String() + "]"
+type StructFieldFullUsage struct {
+	Key          StructFieldFullUsageKey
+	NestedFields StructNestedFields
+
+	dm             StructDirectUsageMap
+	seenStructures map[*types.Named]struct{}
+}
+
+type StructNestedFields map[StructFieldFullUsageKey]StructFieldFullUsage
+
+type StructFullUsage struct {
+	Key          StructFullUsageKey
+	NestedFields StructNestedFields
+
+	dm StructDirectUsageMap
+}
+
+type StructFullUsages struct {
+	dm     StructDirectUsageMap
+	Usages map[StructFullUsageKey]StructFullUsage
 }
 
 func (keys StructFullUsageKeys) Len() int {
@@ -35,9 +50,9 @@ func (keys StructFullUsageKeys) Swap(i, j int) {
 }
 
 func (keys StructFullUsageKeys) Less(i, j int) bool {
-	return keys[i].named.String() < keys[j].named.String() ||
-		(keys[i].named.String() == keys[j].named.String() &&
-			keys[i].variant.String() < keys[j].variant.String())
+	return keys[i].Named.String() < keys[j].Named.String() ||
+		(keys[i].Named.String() == keys[j].Named.String() &&
+			keys[i].Variant.String() < keys[j].Variant.String())
 }
 
 func (keys StructFieldFullUsageKeys) Len() int {
@@ -50,70 +65,57 @@ func (keys StructFieldFullUsageKeys) Swap(i, j int) {
 func (keys StructFieldFullUsageKeys) Less(i, j int) bool {
 	return keys[i].index < keys[j].index ||
 		(keys[i].index == keys[j].index &&
-			keys[i].variant.String() < keys[j].variant.String())
+			keys[i].Variant.String() < keys[j].Variant.String())
+}
+
+func (key StructFullUsageKey) String() string {
+	if key.Variant == nil {
+		return key.Named.String()
+	}
+	return key.Named.String() + " [" + key.Variant.String() + "]"
 }
 
 func (key StructFieldFullUsageKey) String() string {
-	if key.variant == nil {
+	if key.Variant == nil {
 		return key.StructField.String()
 	}
-	return key.StructField.String() + " [" + key.variant.String() + "]"
-}
-
-type StructFieldFullUsage struct {
-	dm             StructDirectUsageMap
-	key            StructFieldFullUsageKey
-	seenStructures map[*types.Named]struct{}
-	nestedFields   StructNestedFields
-}
-
-type StructNestedFields map[StructFieldFullUsageKey]StructFieldFullUsage
-
-type StructFullUsage struct {
-	dm           StructDirectUsageMap
-	key          StructFullUsageKey
-	nestedFields StructNestedFields
-}
-
-type StructFullUsages struct {
-	dm     StructDirectUsageMap
-	usages map[StructFullUsageKey]StructFullUsage
+	return key.StructField.String() + " [" + key.Variant.String() + "]"
 }
 
 func (fu StructFullUsage) String() string {
-	if len(fu.nestedFields) == 0 {
+	if len(fu.NestedFields) == 0 {
 		return ""
 	}
-	var out = []string{fu.key.String()}
+	var out = []string{fu.Key.String()}
 
-	var keys StructFieldFullUsageKeys = make([]StructFieldFullUsageKey, len(fu.nestedFields))
+	var keys StructFieldFullUsageKeys = make([]StructFieldFullUsageKey, len(fu.NestedFields))
 	cnt := 0
-	for k := range fu.nestedFields {
+	for k := range fu.NestedFields {
 		keys[cnt] = k
 		cnt++
 	}
 	sort.Sort(keys)
 
 	for _, key := range keys {
-		out = append(out, fu.nestedFields[key].stringWithIndent(2))
+		out = append(out, fu.NestedFields[key].stringWithIndent(2))
 	}
 	return strings.Join(out, "\n")
 }
 
 func (fus StructFullUsages) String() string {
-	var keys StructFullUsageKeys = make([]StructFullUsageKey, len(fus.usages))
+	var keys StructFullUsageKeys = make([]StructFullUsageKey, len(fus.Usages))
 	cnt := 0
-	for k := range fus.usages {
+	for k := range fus.Usages {
 		keys[cnt] = k
 		cnt++
 	}
 	sort.Sort(keys)
 	var out []string
 	for _, key := range keys {
-		if fus.usages[key].key.String() == "" {
+		if fus.Usages[key].Key.String() == "" {
 			continue
 		}
-		out = append(out, fus.usages[key].String())
+		out = append(out, fus.Usages[key].String())
 	}
 	return strings.Join(out, "\n")
 }
@@ -124,25 +126,25 @@ func (ffu StructFieldFullUsage) String() string {
 
 func (ffu StructFieldFullUsage) stringWithIndent(ident int) string {
 	prefix := strings.Repeat("  ", ident)
-	var out = []string{prefix + ffu.key.String()}
+	var out = []string{prefix + ffu.Key.String()}
 
-	var keys StructFieldFullUsageKeys = make([]StructFieldFullUsageKey, len(ffu.nestedFields))
+	var keys StructFieldFullUsageKeys = make([]StructFieldFullUsageKey, len(ffu.NestedFields))
 	cnt := 0
-	for k := range ffu.nestedFields {
+	for k := range ffu.NestedFields {
 		keys[cnt] = k
 		cnt++
 	}
 	sort.Sort(keys)
 
 	for _, key := range keys {
-		out = append(out, ffu.nestedFields[key].stringWithIndent(ident+2))
+		out = append(out, ffu.NestedFields[key].stringWithIndent(ident+2))
 	}
 	return strings.Join(out, "\n")
 }
 
 func (ffu StructFieldFullUsage) copy() StructFieldFullUsage {
 	newNestedFields := make(map[StructFieldFullUsageKey]StructFieldFullUsage)
-	for k, v := range ffu.nestedFields {
+	for k, v := range ffu.NestedFields {
 		newNestedFields[k] = v.copy()
 	}
 
@@ -153,13 +155,13 @@ func (ffu StructFieldFullUsage) copy() StructFieldFullUsage {
 
 	return StructFieldFullUsage{
 		dm:             ffu.dm,
-		key:            ffu.key,
-		nestedFields:   newNestedFields,
+		Key:            ffu.Key,
+		NestedFields:   newNestedFields,
 		seenStructures: newSeenStructs,
 	}
 }
 
-// build build nested fields for a given named structure or named interface (baseStruct).
+// build build nested fields for a given Named structure or Named interface (baseStruct).
 func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.Named, seenStructures map[*types.Named]struct{}) {
 	if _, ok := seenStructures[baseStruct]; ok {
 		return
@@ -175,7 +177,7 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 		ffu := StructFieldFullUsage{
 			dm:             dm,
 			seenStructures: seenStructures,
-			nestedFields:   map[StructFieldFullUsageKey]StructFieldFullUsage{},
+			NestedFields:   map[StructFieldFullUsageKey]StructFieldFullUsage{},
 		}
 
 		t := nestedField.DereferenceRElem()
@@ -183,7 +185,7 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 			k := StructFieldFullUsageKey{
 				StructField: nestedField,
 			}
-			ffu.key = k
+			ffu.Key = k
 			nsf[k] = ffu
 			continue
 		}
@@ -198,10 +200,10 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 				}
 				k := StructFieldFullUsageKey{
 					StructField: nestedField,
-					variant:     du,
+					Variant:     du,
 				}
-				ffu.key = k
-				ffu.nestedFields.build(dm, du, ffu.seenStructures)
+				ffu.Key = k
+				ffu.NestedFields.build(dm, du, ffu.seenStructures)
 				nsf[k] = ffu
 			}
 		case *types.Struct:
@@ -209,8 +211,8 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 			k := StructFieldFullUsageKey{
 				StructField: nestedField,
 			}
-			ffu.key = k
-			ffu.nestedFields.build(dm, nt, ffu.seenStructures)
+			ffu.Key = k
+			ffu.NestedFields.build(dm, nt, ffu.seenStructures)
 			nsf[k] = ffu
 		default:
 			panic("will never happen")
@@ -218,11 +220,11 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 	}
 }
 
-// buildUsages build usages for one named type. When it is a structure, it will build usage for the structure as long
+// buildUsages build Usages for one Named type. When it is a structure, it will build usage for the structure as long
 // as the structure appears in the "dm". When it is an interface, it will build usage for all structures appear in the "dm"
 // that implement the interface.
 func (us StructFullUsages) buildUsages(root *types.Named) {
-	// If the target named type is an interface_property, we shall do the full usage processing
+	// If the target Named type is an interface_property, we shall do the full usage processing
 	// on each of its variants that appear in the direct usage map.
 	if iRoot, ok := root.Underlying().(*types.Interface); ok {
 		for du := range us.dm {
@@ -230,15 +232,15 @@ func (us StructFullUsages) buildUsages(root *types.Named) {
 				continue
 			}
 			k := StructFullUsageKey{
-				named:   root,
-				variant: du,
+				Named:   root,
+				Variant: du,
 			}
-			us.usages[k] = StructFullUsage{
+			us.Usages[k] = StructFullUsage{
 				dm:           us.dm,
-				key:          k,
-				nestedFields: map[StructFieldFullUsageKey]StructFieldFullUsage{},
+				Key:          k,
+				NestedFields: map[StructFieldFullUsageKey]StructFieldFullUsage{},
 			}
-			us.usages[k].nestedFields.build(us.dm, du, map[*types.Named]struct{}{})
+			us.Usages[k].NestedFields.build(us.dm, du, map[*types.Named]struct{}{})
 		}
 		return
 	}
@@ -248,26 +250,26 @@ func (us StructFullUsages) buildUsages(root *types.Named) {
 	}
 
 	k := StructFullUsageKey{
-		named: root,
+		Named: root,
 	}
-	us.usages[k] = StructFullUsage{
+	us.Usages[k] = StructFullUsage{
 		dm:           us.dm,
-		key:          k,
-		nestedFields: map[StructFieldFullUsageKey]StructFieldFullUsage{},
+		Key:          k,
+		NestedFields: map[StructFieldFullUsageKey]StructFieldFullUsage{},
 	}
-	us.usages[k].nestedFields.build(us.dm, root, map[*types.Named]struct{}{})
+	us.Usages[k].NestedFields.build(us.dm, root, map[*types.Named]struct{}{})
 	return
 }
 
 // BuildStructFullUsages extends all the types in rootSet, as long as the type is a structure or interface
 // that is implemented by some structures. It will iterate structures' properties, if that property is
-// another named structure or interface, we will try to go on extending the property.
+// another Named structure or interface, we will try to go on extending the property.
 // We only extend the properties (of type structure) when the property is directly referenced somewhere, i.e.,
 // appears in "dm".
 func BuildStructFullUsages(dm StructDirectUsageMap, rootSet NamedTypeSet) StructFullUsages {
 	us := StructFullUsages{
 		dm:     dm,
-		usages: map[StructFullUsageKey]StructFullUsage{},
+		Usages: map[StructFullUsageKey]StructFullUsage{},
 	}
 
 	for root := range rootSet {

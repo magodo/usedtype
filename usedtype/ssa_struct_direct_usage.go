@@ -91,7 +91,7 @@ func (m StructDirectUsageMap) record(pkg *packages.Package, instr ssa.Instructio
 }
 
 // FindInPackageStructureDirectUsage searches among the ssapkgs to gather each virtual field access on exported fields
-// for each named struct.
+// for each Named struct.
 func FindInPackageStructureDirectUsage(pkgs []*packages.Package, ssapkgs []*ssa.Package) StructDirectUsageMap {
 	output := StructDirectUsageMap{}
 	for idx := range ssapkgs {
