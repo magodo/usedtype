@@ -14,8 +14,8 @@ type StructFullUsageKey struct {
 type StructFullUsageKeys []StructFullUsageKey
 
 type StructFieldFullUsageKey struct {
-	structField
-	variant *types.Named // non-nil only when the structField corresponds to an interface_property
+	StructField
+	variant *types.Named // non-nil only when the StructField corresponds to an interface_property
 }
 
 type StructFieldFullUsageKeys []StructFieldFullUsageKey
@@ -55,9 +55,9 @@ func (keys StructFieldFullUsageKeys) Less(i, j int) bool {
 
 func (key StructFieldFullUsageKey) String() string {
 	if key.variant == nil {
-		return key.structField.String()
+		return key.StructField.String()
 	}
-	return key.structField.String() + " [" + key.variant.String() + "]"
+	return key.StructField.String() + " [" + key.variant.String() + "]"
 }
 
 type StructFieldFullUsage struct {
@@ -95,7 +95,7 @@ func (fu StructFullUsage) String() string {
 	sort.Sort(keys)
 
 	for _, key := range keys {
-		out = append(out, fu.nestedFields[key].StringWithIndent(2))
+		out = append(out, fu.nestedFields[key].stringWithIndent(2))
 	}
 	return strings.Join(out, "\n")
 }
@@ -119,10 +119,10 @@ func (fus StructFullUsages) String() string {
 }
 
 func (ffu StructFieldFullUsage) String() string {
-	return ffu.StringWithIndent(0)
+	return ffu.stringWithIndent(0)
 }
 
-func (ffu StructFieldFullUsage) StringWithIndent(ident int) string {
+func (ffu StructFieldFullUsage) stringWithIndent(ident int) string {
 	prefix := strings.Repeat("  ", ident)
 	var out = []string{prefix + ffu.key.String()}
 
@@ -135,7 +135,7 @@ func (ffu StructFieldFullUsage) StringWithIndent(ident int) string {
 	sort.Sort(keys)
 
 	for _, key := range keys {
-		out = append(out, ffu.nestedFields[key].StringWithIndent(ident+2))
+		out = append(out, ffu.nestedFields[key].stringWithIndent(ident+2))
 	}
 	return strings.Join(out, "\n")
 }
@@ -159,6 +159,7 @@ func (ffu StructFieldFullUsage) copy() StructFieldFullUsage {
 	}
 }
 
+// build build nested fields for a given named structure or named interface (baseStruct).
 func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.Named, seenStructures map[*types.Named]struct{}) {
 	if _, ok := seenStructures[baseStruct]; ok {
 		return
@@ -180,7 +181,7 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 		t := nestedField.DereferenceRElem()
 		if !IsElemUnderlyingNamedStructOrInterface(t) {
 			k := StructFieldFullUsageKey{
-				structField: nestedField,
+				StructField: nestedField,
 			}
 			ffu.key = k
 			nsf[k] = ffu
@@ -196,7 +197,7 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 					continue
 				}
 				k := StructFieldFullUsageKey{
-					structField: nestedField,
+					StructField: nestedField,
 					variant:     du,
 				}
 				ffu.key = k
@@ -206,7 +207,7 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 		case *types.Struct:
 			ffu := ffu.copy()
 			k := StructFieldFullUsageKey{
-				structField: nestedField,
+				StructField: nestedField,
 			}
 			ffu.key = k
 			ffu.nestedFields.build(dm, nt, ffu.seenStructures)
@@ -217,6 +218,9 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 	}
 }
 
+// buildUsages build usages for one named type. When it is a structure, it will build usage for the structure as long
+// as the structure appears in the "dm". When it is an interface, it will build usage for all structures appear in the "dm"
+// that implement the interface.
 func (us StructFullUsages) buildUsages(root *types.Named) {
 	// If the target named type is an interface_property, we shall do the full usage processing
 	// on each of its variants that appear in the direct usage map.
@@ -255,6 +259,11 @@ func (us StructFullUsages) buildUsages(root *types.Named) {
 	return
 }
 
+// BuildStructFullUsages extends all the types in rootSet, as long as the type is a structure or interface
+// that is implemented by some structures. It will iterate structures' properties, if that property is
+// another named structure or interface, we will try to go on extending the property.
+// We only extend the properties (of type structure) when the property is directly referenced somewhere, i.e.,
+// appears in "dm".
 func BuildStructFullUsages(dm StructDirectUsageMap, rootSet NamedTypeSet) StructFullUsages {
 	us := StructFullUsages{
 		dm:     dm,
