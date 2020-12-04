@@ -2,6 +2,8 @@
 
 `usedtype` is a tool to print the used named type (including structure and interface whose implementers are structure) and its members (recursively) in one or more Go packages.
 
+> ❗ NOTE: The process used in this tool tends to be over-estimated (i.e. sound) given the goal is to calculate truth structure usage (coverage). In other words, some field in structure is reported as used, might be actually not used.
+
 ## Usage
 
 ```shell
