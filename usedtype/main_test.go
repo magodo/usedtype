@@ -9,17 +9,21 @@ import (
 )
 
 var (
-	pathA         string
-	pathInterface string
+	pathA                 string
+	pathInterfaceProperty string
+	pathInterfaceRoot     string
+	pathInterfaceNest     string
 )
 
 func init() {
 	pwd, _ := os.Getwd()
 	pathA = filepath.Join(pwd, "testdata", "src", "a")
-	pathInterface = filepath.Join(pwd, "testdata", "src", "interface")
+	pathInterfaceProperty = filepath.Join(pwd, "testdata", "src", "interface_property")
+	pathInterfaceRoot = filepath.Join(pwd, "testdata", "src", "interface_root")
+	pathInterfaceNest = filepath.Join(pwd, "testdata", "src", "interface_nest")
 }
 
-func terraformSchemaTypeFilter(epkg *packages.Package, t *types.Struct) bool {
+func terraformSchemaTypeFilter(epkg *packages.Package, t *types.Named) bool {
 	scope := epkg.Types.Scope()
 	for _, topType := range scope.Names() {
 		et := scope.Lookup(topType).Type()
@@ -42,15 +46,7 @@ func terraformSchemaTypeFilter(epkg *packages.Package, t *types.Struct) bool {
 			}
 			signature := c.Type().(*types.Signature)
 			lastParam := signature.Params().At(signature.Params().Len() - 1)
-			nt, ok := lastParam.Type().(*types.Named)
-			if !ok {
-				continue
-			}
-			st, ok := nt.Underlying().(*types.Struct)
-			if !ok {
-				continue
-			}
-			if types.Identical(st, t) {
+			if types.Identical(lastParam.Type(), t) {
 				return true
 			}
 		default:

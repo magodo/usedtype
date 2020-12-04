@@ -31,39 +31,12 @@ func main() {
 	}
 
 	// Analyze all the target external packages and get a list of types.Object
-	targetStructSets := usedtype.FindExternalPackageStruct(pkgs, *pattern, terraformSchemaTypeFilter)
+	targetNamedTypeSet := usedtype.FindExternalPackageNamedType(pkgs, *pattern, terraformSchemaTypeFilter)
 
 	directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
 
-	//for t := range targetStructSets {
-	//	if u, ok := usage[t]; ok {
-	//		fmt.Printf("===\n%s\n===\n%s\n", t.String(), u)
-	//	}
-	//}
-	fus := usedtype.BuildStructFullUsages(directUsage, targetStructSets)
+	fus := usedtype.BuildStructFullUsages(directUsage, targetNamedTypeSet)
 	fmt.Println(fus)
-
-	//
-	//// Find all ssa def node of the current package.
-	//ssadefs := usedtype.FindInPackageAllDefValue(pkgs, ssapkgs)
-	//
-	//var allOduChains usedtype.ODUChainCluster = map[ssa.Value]usedtype.ODUChains{}
-	//for _, value := range ssadefs {
-	//	allOduChains[value.Value] = usedtype.WalkODUChains(value.Value, ssapkgs, value.Fset)
-	//}
-	//
-	//fmt.Println(allOduChains.String())
-	//allOduChains.Pair()
-	//
-	//structNodes := usedtype.FindInPackageDefValueOfTargetStructType(ssapkgs, targetStructs)
-	//for k, values := range structNodes {
-	//	fmt.Println(k.TypeName)
-	//	for _, v := range values {
-	//		for _, chain := range allOduChains[v] {
-	//			fmt.Println(chain.Fields())
-	//		}
-	//	}
-	//}
 }
 
 func terraformSchemaTypeFilter(epkg *packages.Package, t *types.Named) bool {

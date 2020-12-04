@@ -20,22 +20,48 @@ type Animal interface {
 }
 
 type Dog struct {
-	RunSpeed int `json:"run_speed"`
+	Name     string `json:"name"`
+	RunSpeed int    `json:"run_speed"`
 }
 
 func (d Dog) isAnimal() {}
 
 type Fish struct {
-	SwimSpeed int `json:"swim_speed"`
+	Name      string `json:"name"`
+	SwimSpeed int    `json:"swim_speed"`
 }
 
 func (f Fish) isAnimal() {}
 
-type OneAnimal struct {
-	Name   string `json:"name"`
-	Animal Animal `json:"animal"`
+type Bird struct {
+	Name     string `json:"name"`
+	FlySpeed int    `json:"fly_speed"`
 }
 
-type Zoo struct {
+func (b Bird) isAnimal() {}
+
+type AnimalFamily interface {
+	IsFamily()
+}
+
+type DogFamily struct {
 	Animals []Animal `json:"animals"`
+}
+
+func (f DogFamily) IsFamily() {}
+
+type FishFamily struct {
+	Animals []Animal `json:"animals"`
+}
+
+func (f FishFamily) IsFamily() {}
+
+type BirdFamily struct {
+	Animals []Animal `json:"animals"`
+}
+
+func (f BirdFamily) IsFamily() {}
+
+type Zoo struct {
+	AnimalFamilies []AnimalFamily `json:"animal_family"`
 }

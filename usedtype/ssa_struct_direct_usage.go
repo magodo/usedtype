@@ -21,9 +21,18 @@ func (u structField) Exported() bool {
 	return u.base.Field(u.index).Exported()
 }
 
-func (u structField) IsUnderlyingNamedStructOrArrayOfNamedStruct() bool {
+func (u structField) DereferenceRElem() types.Type {
+	return DereferenceRElem(u.base.Field(u.index).Type())
+}
+
+func (u structField) IsElemUnderlyingNamedStructOrInterface() bool {
 	t := u.base.Field(u.index).Type()
-	return IsUnderlyingNamedStructOrArrayOfNamedStruct(t)
+	return IsElemUnderlyingNamedStructOrInterface(t)
+}
+
+func (u structField) IsElemUnderlyingNamedInterface() bool {
+	t := u.base.Field(u.index).Type()
+	return IsElemUnderlyingNamedInterface(t)
 }
 
 func (u structField) String() string {
@@ -47,7 +56,7 @@ func (u structField) String() string {
 type StructDirectUsageMap map[*types.Named]structDirectUsage
 
 func (u StructDirectUsageMap) String() string {
-	var keys comparableNamed = make([]*types.Named, len(u))
+	var keys namedTypes = make([]*types.Named, len(u))
 	cnt := 0
 	for k := range u {
 		keys[cnt] = k

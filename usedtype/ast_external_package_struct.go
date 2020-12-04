@@ -2,17 +2,20 @@ package usedtype
 
 import (
 	"go/types"
-	"golang.org/x/tools/go/packages"
 	"regexp"
+
+	"golang.org/x/tools/go/packages"
 )
 
-type StructSet map[*types.Named]struct{}
+type NamedTypeSet map[*types.Named]struct{}
 
 type FilterFunc func(epkg *packages.Package, t *types.Named) bool
 
-func FindExternalPackageStruct(pkgs []*packages.Package, pattern string, filter FilterFunc) StructSet {
+// Find among the external depended packages of "pkgs", whose import path matching "pattern", all the
+// named types. If "filter" is non-nil, it is used to further filter the named types.
+func FindExternalPackageNamedType(pkgs []*packages.Package, pattern string, filter FilterFunc) NamedTypeSet {
 	p := regexp.MustCompile(pattern)
-	tset:= map[*types.Named]struct{}{}
+	tset := map[*types.Named]struct{}{}
 	for _, pkg := range pkgs {
 		for epkgImportPath, epkg := range pkg.Imports {
 			if !p.MatchString(epkgImportPath) {
@@ -24,9 +27,6 @@ func FindExternalPackageStruct(pkgs []*packages.Package, pattern string, filter 
 				}
 				namedType, ok := obj.Type().(*types.Named)
 				if !ok {
-					continue
-				}
-				if ! IsUnderlyingNamedStruct(namedType) {
 					continue
 				}
 				if filter != nil && !filter(epkg, namedType) {

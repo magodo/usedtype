@@ -39,29 +39,54 @@ func IsUnderlyingNamedStruct(t types.Type) bool {
 	return true
 }
 
-func IsUnderlyingNamedStructOrArrayOfNamedStruct(t types.Type) bool {
+func IsUnderlyingNamedInterface(t types.Type) bool {
+	t = DereferenceR(t)
+	nt, ok := t.(*types.Named)
+	if !ok {
+		return false
+	}
+	if _, ok := nt.Underlying().(*types.Interface); !ok {
+		return false
+	}
+	return true
+}
+
+func IsUnderlyingNamedStructOrInterface(t types.Type) bool {
+	return IsUnderlyingNamedInterface(t) || IsUnderlyingNamedStruct(t)
+}
+
+func IsElemUnderlyingNamedInterface(t types.Type) bool {
 	t = DereferenceR(t)
 	switch t := t.(type) {
-	case *types.Named:
-		return IsUnderlyingNamedStruct(t)
 	case *types.Array:
-		return IsUnderlyingNamedStructOrArrayOfNamedStruct(t.Elem())
+		return IsElemUnderlyingNamedInterface(t.Elem())
 	case *types.Slice:
-		return IsUnderlyingNamedStructOrArrayOfNamedStruct(t.Elem())
+		return IsElemUnderlyingNamedInterface(t.Elem())
 	default:
-		return false
+		return IsUnderlyingNamedInterface(t)
 	}
 }
 
-type comparableNamed []*types.Named
+func IsElemUnderlyingNamedStructOrInterface(t types.Type) bool {
+	t = DereferenceR(t)
+	switch t := t.(type) {
+	case *types.Array:
+		return IsElemUnderlyingNamedStructOrInterface(t.Elem())
+	case *types.Slice:
+		return IsElemUnderlyingNamedStructOrInterface(t.Elem())
+	default:
+		return IsUnderlyingNamedStructOrInterface(t)
+	}
+}
 
-func (st comparableNamed) Swap(i, j int) {
+type namedTypes []*types.Named
+
+func (st namedTypes) Swap(i, j int) {
 	st[i], st[j] = st[j], st[i]
 }
-func (st comparableNamed) Len() int {
+func (st namedTypes) Len() int {
 	return len(st)
 }
-func (st comparableNamed) Less(i, j int) bool {
+func (st namedTypes) Less(i, j int) bool {
 	return st[i].String() < st[j].String()
 }
-
