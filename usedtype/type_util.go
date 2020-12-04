@@ -1,41 +1,8 @@
 package usedtype
 
 import (
-	"fmt"
 	"go/types"
-	"golang.org/x/tools/go/ssa"
-	"strings"
 )
-
-// IsDefValue tells whether the input value is a "define" value.
-func IsDefValue(v ssa.Value) bool {
-	switch v := v.(type) {
-	case *ssa.Alloc,
-		*ssa.Parameter:
-		// continue
-	case *ssa.Global:
-		// E.g. init$guard
-		if v.Object() == nil {
-			return false
-		}
-		// continue
-	default:
-		return false
-	}
-
-	return IsUnderlyingNamedStructOrArrayOfNamedStruct(v.Type())
-}
-
-// ReferenceDepth return the reference level of a given SSA value.
-func ReferenceDepth(vt types.Type) int {
-	cnt := 0
-	for pt, ok := vt.(*types.Pointer); ok; {
-		cnt++
-		vt = pt.Elem()
-		pt, ok = vt.(*types.Pointer)
-	}
-	return cnt
-}
 
 // DereferenceR returns a pointer's element type; otherwise it returns
 // T. If the element type is itself a pointer, DereferenceR will be
@@ -86,12 +53,15 @@ func IsUnderlyingNamedStructOrArrayOfNamedStruct(t types.Type) bool {
 	}
 }
 
-func assert(b bool, msg ...string) {
-	s := "will not happen"
-	if !b {
-		if len(msg) != 0 {
-			s = fmt.Sprintf("%s: %s", s, strings.Join(msg, ","))
-		}
-		panic(s)
-	}
+type comparableNamed []*types.Named
+
+func (st comparableNamed) Swap(i, j int) {
+	st[i], st[j] = st[j], st[i]
 }
+func (st comparableNamed) Len() int {
+	return len(st)
+}
+func (st comparableNamed) Less(i, j int) bool {
+	return st[i].String() < st[j].String()
+}
+

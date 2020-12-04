@@ -9,14 +9,14 @@ import (
 )
 
 var (
-	pathA string
-	pathB string
+	pathA         string
+	pathInterface string
 )
 
 func init() {
 	pwd, _ := os.Getwd()
 	pathA = filepath.Join(pwd, "testdata", "src", "a")
-	pathB = filepath.Join(pwd, "testdata", "src", "b")
+	pathInterface = filepath.Join(pwd, "testdata", "src", "interface")
 }
 
 func terraformSchemaTypeFilter(epkg *packages.Package, t *types.Struct) bool {

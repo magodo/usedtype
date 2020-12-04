@@ -14,3 +14,28 @@ type ModelA struct {
 type Property struct {
 	Int int `json:"int"`
 }
+
+type Animal interface {
+	isAnimal()
+}
+
+type Dog struct {
+	RunSpeed int `json:"run_speed"`
+}
+
+func (d Dog) isAnimal() {}
+
+type Fish struct {
+	SwimSpeed int `json:"swim_speed"`
+}
+
+func (f Fish) isAnimal() {}
+
+type OneAnimal struct {
+	Name   string `json:"name"`
+	Animal Animal `json:"animal"`
+}
+
+type Zoo struct {
+	Animals []Animal `json:"animals"`
+}

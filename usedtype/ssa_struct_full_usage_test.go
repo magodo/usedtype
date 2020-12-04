@@ -1,7 +1,6 @@
 package usedtype_test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/magodo/usedtype/usedtype"
@@ -39,15 +38,26 @@ sdk.Property
     Int (int)
 `,
 		},
+		// 1
+		{
+			pathInterface,
+			[]string{"."},
+			"sdk",
+			`
+`,
+		},
 	}
 
 	for idx, c := range cases {
+		if idx != 1 {
+			continue
+		}
 		pkgs, ssapkgs, err := usedtype.BuildPackages(c.dir, c.patterns)
 		require.NoError(t, err, idx)
 		directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
 		targetRootSet := usedtype.FindExternalPackageStruct(pkgs, c.epattern, nil)
 		fus := usedtype.BuildStructFullUsages(directUsage, targetRootSet)
-		fmt.Println(fus.String())
+		//fmt.Println(fus.String())
 		require.Equal(t, c.expect, "\n"+fus.String()+"\n", idx)
 	}
 }
