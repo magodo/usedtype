@@ -163,7 +163,7 @@ sdk.Zoo
 		pkgs, ssapkgs, err := usedtype.BuildPackages(c.dir, c.patterns)
 		require.NoError(t, err, idx)
 		directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
-		targetRootSet := usedtype.FindExternalPackageNamedType(pkgs, c.epattern, c.filter)
+		targetRootSet := usedtype.FindPackageNamedType(pkgs, c.epattern, c.filter)
 		fus := usedtype.BuildStructFullUsages(directUsage, targetRootSet)
 		//fmt.Println(fus.String())
 		require.Equal(t, c.expect, "\n"+fus.String()+"\n", idx)

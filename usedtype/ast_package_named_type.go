@@ -11,9 +11,9 @@ type NamedTypeSet map[*types.Named]struct{}
 
 type FilterFunc func(epkg *packages.Package, t *types.Named) bool
 
-// Find among the external depended packages of "pkgs", whose import path matching "pattern", all the
+// Find among the packages of "pkgs", whose import path matching "pattern", all the
 // Named types. If "filter" is non-nil, it is used to further filter the Named types.
-func FindExternalPackageNamedType(pkgs []*packages.Package, pattern string, filter FilterFunc) NamedTypeSet {
+func FindPackageNamedType(pkgs []*packages.Package, pattern string, filter FilterFunc) NamedTypeSet {
 	p := regexp.MustCompile(pattern)
 	tset := map[*types.Named]struct{}{}
 	pkgSet := map[*packages.Package]struct{}{}

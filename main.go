@@ -28,7 +28,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	targetNamedTypeSet := usedtype.FindExternalPackageNamedType(pkgs, *pattern, nil)
+	targetNamedTypeSet := usedtype.FindPackageNamedType(pkgs, *pattern, nil)
 	directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
 	fus := usedtype.BuildStructFullUsages(directUsage, targetNamedTypeSet)
 	fmt.Println(fus)
