@@ -9,13 +9,14 @@ import (
 	"github.com/magodo/usedtype/usedtype"
 )
 
-const usage = `usedtype -p <external pkg pattern> <package>`
+const usage = `usedtype -p <def pkg pattern> <search package pattern>`
 
-var pattern = flag.String("p", "", "The regexp pattern for package import path of the external package to scan the struct coverage.")
+var pattern = flag.String("p", "", "The regexp pattern of import path of the package where the named types are defined.")
 
 func main() {
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "%s\n", usage)
+		flag.PrintDefaults()
 	}
 	flag.Parse()
 	if *pattern == "" {
