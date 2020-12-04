@@ -30,6 +30,22 @@ func (u StructField) IsElemUnderlyingNamedInterface() bool {
 	return IsElemUnderlyingNamedInterface(t)
 }
 
+func (u StructField) JSONTag() string {
+	tag := reflect.StructTag(u.base.Tag(u.index))
+	jsonTag := tag.Get("json")
+	idx := strings.Index(jsonTag, ",")
+	var jsonTagName string
+	if idx == -1 {
+		jsonTagName = jsonTag
+	} else {
+		jsonTagName = jsonTag[:idx]
+		if jsonTagName == "" {
+			jsonTagName = u.base.Field(u.index).Name()
+		}
+	}
+	return jsonTagName
+}
+
 func (u StructField) String() string {
 	fieldName := u.base.Field(u.index).Name()
 	tag := reflect.StructTag(u.base.Tag(u.index))
