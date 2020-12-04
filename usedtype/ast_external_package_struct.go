@@ -16,25 +16,30 @@ type FilterFunc func(epkg *packages.Package, t *types.Named) bool
 func FindExternalPackageNamedType(pkgs []*packages.Package, pattern string, filter FilterFunc) NamedTypeSet {
 	p := regexp.MustCompile(pattern)
 	tset := map[*types.Named]struct{}{}
+	pkgSet := map[*packages.Package]struct{}{}
 	for _, pkg := range pkgs {
-		for epkgImportPath, epkg := range pkg.Imports {
-			if !p.MatchString(epkgImportPath) {
+		pkgSet[pkg] = struct{}{}
+		for _, epkg := range pkg.Imports {
+			pkgSet[epkg] = struct{}{}
+		}
+	}
+	for pkg := range pkgSet {
+		if !p.MatchString(pkg.PkgPath) {
+			continue
+		}
+		for _, obj := range pkg.TypesInfo.Defs {
+			if _, ok := obj.(*types.TypeName); !ok {
 				continue
 			}
-			for _, obj := range epkg.TypesInfo.Defs {
-				if _, ok := obj.(*types.TypeName); !ok {
-					continue
-				}
-				namedType, ok := obj.Type().(*types.Named)
-				if !ok {
-					continue
-				}
-				if filter != nil && !filter(epkg, namedType) {
-					continue
-				}
-
-				tset[namedType] = struct{}{}
+			namedType, ok := obj.Type().(*types.Named)
+			if !ok {
+				continue
 			}
+			if filter != nil && !filter(pkg, namedType) {
+				continue
+			}
+
+			tset[namedType] = struct{}{}
 		}
 	}
 	return tset

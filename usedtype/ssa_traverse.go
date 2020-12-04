@@ -40,9 +40,8 @@ func (t *Traversal) WalkInPackage(pkg *ssa.Package, icb WalkInstrCallback, vcb W
 	}
 	for _, m := range pkg.Members {
 		switch m := m.(type) {
-		case *ssa.Type,
-			*ssa.NamedConst:
-			// nothing to do, since it will not appear any Value of target type
+		case *ssa.NamedConst,
+			*ssa.Type:
 		case *ssa.Global:
 			if _, ok := t.seen.values[m]; ok {
 				continue
@@ -74,7 +73,7 @@ func (t *Traversal) walkFunction(pkg *ssa.Package, fn *ssa.Function, icb WalkIns
 	t.seen.functions[fn] = struct{}{}
 
 	for _, param := range fn.Params {
-		t.walkValue(pkg, param, vcb)
+		t.walkValue(pkg, param, icb, vcb)
 	}
 
 	t.walkInstructions(pkg, fn, icb, vcb)
@@ -101,13 +100,13 @@ func (t *Traversal) walkInstructions(pkg *ssa.Package, fn *ssa.Function, icb Wal
 			ops := instr.Operands(nil)
 
 			for _, arg := range ops {
-				t.walkValue(pkg, *arg, vcb)
+				t.walkValue(pkg, *arg, icb, vcb)
 			}
 		}
 	}
 }
 
-func (t *Traversal) walkValue(pkg *ssa.Package, v ssa.Value, cb WalkValueCallback) {
+func (t *Traversal) walkValue(pkg *ssa.Package, v ssa.Value, icb WalkInstrCallback, vcb WalkValueCallback) {
 	if v == nil {
 		return
 	}
@@ -119,15 +118,23 @@ func (t *Traversal) walkValue(pkg *ssa.Package, v ssa.Value, cb WalkValueCallbac
 
 	phi, ok := v.(*ssa.Phi)
 	if !ok {
-		if cb != nil {
-			cb(v)
+		if vcb != nil {
+			vcb(v)
+		}
+
+		// This is necessary for following the method calls, which are not included
+		// in Members of ssa package.
+		switch v := v.(type) {
+		case *ssa.Function:
+			t.walkFunction(pkg, v, icb, vcb)
+			return
 		}
 		return
 	}
 
 	applyPhi := func(v *ssa.Phi) {
 		for _, e := range v.Edges {
-			t.walkValue(pkg, e, cb)
+			t.walkValue(pkg, e, icb, vcb)
 		}
 	}
 	applyPhi(phi)

@@ -12,7 +12,7 @@ import (
 // both packages.Package and usedtype.Package(s) with a whole program build.
 func BuildPackages(dir string, args []string) ([]*packages.Package, []*ssa.Package, error) {
 	cfg := packages.Config{Dir: dir, Mode: packages.LoadAllSyntax}
-	pkgs, err := packages.Load(&cfg, args[1:]...)
+	pkgs, err := packages.Load(&cfg, args...)
 	if err != nil {
 		return nil, nil, err
 	}

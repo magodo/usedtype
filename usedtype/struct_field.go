@@ -45,5 +45,8 @@ func (u StructField) String() string {
 		}
 	}
 
+	if jsonTagName == "" {
+		return fieldName
+	}
 	return fmt.Sprintf("%s (%s)", fieldName, jsonTagName)
 }
