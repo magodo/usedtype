@@ -9,9 +9,10 @@ import (
 	"github.com/magodo/usedtype/usedtype"
 )
 
-const usage = `usedtype -p <def pkg pattern> <search package pattern>`
+const usage = `usedtype -p <def pkg pattern> [options] <search package pattern>`
 
 var pattern = flag.String("p", "", "The regexp pattern of import path of the package where the named types are defined.")
+var verbose = flag.Bool("v", false, "Whether to output the lines of code for each field usage")
 
 func main() {
 	flag.Usage = func() {
@@ -28,6 +29,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	usedtype.SetStructFieldUsageVerbose(*verbose)
 
 	targetNamedTypeSet := usedtype.FindPackageNamedType(pkgs, *pattern, nil)
 	directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)

@@ -1,10 +1,17 @@
 package usedtype
 
 import (
+	"go/token"
 	"go/types"
 	"sort"
 	"strings"
 )
+
+var verbose bool
+
+func SetStructFieldUsageVerbose(enabled bool) {
+	verbose = enabled
+}
 
 type StructFullUsageKey struct {
 	Named   *types.Named
@@ -23,6 +30,7 @@ type StructFieldFullUsageKeys []StructFieldFullUsageKey
 type StructFieldFullUsage struct {
 	Key          StructFieldFullUsageKey
 	NestedFields StructNestedFields
+	Positions    []token.Position
 
 	dm             StructDirectUsageMap
 	seenStructures map[*types.Named]struct{}
@@ -128,6 +136,14 @@ func (ffu StructFieldFullUsage) stringWithIndent(ident int) string {
 	prefix := strings.Repeat("  ", ident)
 	var out = []string{prefix + ffu.Key.String()}
 
+	if verbose {
+		positions := []string{}
+		for _, pos := range ffu.Positions {
+			positions = append(positions, prefix+pos.String())
+		}
+		out = append(out, positions...)
+	}
+
 	var keys StructFieldFullUsageKeys = make([]StructFieldFullUsageKey, len(ffu.NestedFields))
 	cnt := 0
 	for k := range ffu.NestedFields {
@@ -173,11 +189,12 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 		return
 	}
 
-	for nestedField := range du {
+	for nestedField, positions := range du {
 		ffu := StructFieldFullUsage{
 			dm:             dm,
 			seenStructures: seenStructures,
 			NestedFields:   map[StructFieldFullUsageKey]StructFieldFullUsage{},
+			Positions:      positions,
 		}
 
 		t := nestedField.DereferenceRElem()
