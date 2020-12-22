@@ -169,11 +169,15 @@ func (ffu StructFieldFullUsage) copy() StructFieldFullUsage {
 		newSeenStructs[k] = v
 	}
 
+	newPositions := make([]token.Position, len(ffu.Positions))
+	copy(newPositions, ffu.Positions)
+
 	return StructFieldFullUsage{
 		dm:             ffu.dm,
 		Key:            ffu.Key,
 		NestedFields:   newNestedFields,
 		seenStructures: newSeenStructs,
+		Positions:      newPositions,
 	}
 }
 
