@@ -57,7 +57,7 @@ func TestFindInPackageStructureDirectUsage(t *testing.T) {
 	}
 
 	for idx, c := range cases {
-		pkgs, ssapkgs, err := usedtype.BuildPackages(c.dir, c.patterns)
+		pkgs, ssapkgs, _, err := usedtype.BuildPackages(c.dir, c.patterns)
 		require.NoError(t, err, idx)
 		du := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
 		_ = du

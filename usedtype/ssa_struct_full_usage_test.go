@@ -116,21 +116,15 @@ sdk.AnimalFamily [sdk.BirdFamily]
     Animals (animals) [sdk.Bird]
         Name (name)
     Animals (animals) [sdk.Dog]
-        Name (name)
     Animals (animals) [sdk.Fish]
-        Name (name)
 sdk.AnimalFamily [sdk.DogFamily]
     Animals (animals) [sdk.Bird]
-        Name (name)
     Animals (animals) [sdk.Dog]
         Name (name)
     Animals (animals) [sdk.Fish]
-        Name (name)
 sdk.AnimalFamily [sdk.FishFamily]
     Animals (animals) [sdk.Bird]
-        Name (name)
     Animals (animals) [sdk.Dog]
-        Name (name)
     Animals (animals) [sdk.Fish]
         Name (name)
 sdk.Zoo
@@ -138,21 +132,15 @@ sdk.Zoo
         Animals (animals) [sdk.Bird]
             Name (name)
         Animals (animals) [sdk.Dog]
-            Name (name)
         Animals (animals) [sdk.Fish]
-            Name (name)
     AnimalFamilies (animal_family) [sdk.DogFamily]
         Animals (animals) [sdk.Bird]
-            Name (name)
         Animals (animals) [sdk.Dog]
             Name (name)
         Animals (animals) [sdk.Fish]
-            Name (name)
     AnimalFamilies (animal_family) [sdk.FishFamily]
         Animals (animals) [sdk.Bird]
-            Name (name)
         Animals (animals) [sdk.Dog]
-            Name (name)
         Animals (animals) [sdk.Fish]
             Name (name)
 `,
@@ -160,11 +148,14 @@ sdk.Zoo
 	}
 
 	for idx, c := range cases {
-		pkgs, ssapkgs, err := usedtype.BuildPackages(c.dir, c.patterns)
+		if idx != 4 {
+			continue
+		}
+		pkgs, ssapkgs, graph, err := usedtype.BuildPackages(c.dir, c.patterns)
 		require.NoError(t, err, idx)
 		directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
 		targetRootSet := usedtype.FindPackageNamedType(pkgs, c.epattern, c.filter)
-		fus := usedtype.BuildStructFullUsages(directUsage, targetRootSet)
+		fus := usedtype.BuildStructFullUsages(directUsage, targetRootSet, graph)
 		//fmt.Println(fus.String())
 		require.Equal(t, c.expect, "\n"+fus.String()+"\n", idx)
 	}

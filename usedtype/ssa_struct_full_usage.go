@@ -1,10 +1,13 @@
 package usedtype
 
 import (
-	"go/token"
+	"fmt"
 	"go/types"
 	"sort"
 	"strings"
+
+	"golang.org/x/tools/go/callgraph"
+	"golang.org/x/tools/go/ssa"
 )
 
 var verbose bool
@@ -27,10 +30,12 @@ type StructFieldFullUsageKey struct {
 
 type StructFieldFullUsageKeys []StructFieldFullUsageKey
 
+type VirtAccessPath []VirtAccessPoint
+
 type StructFieldFullUsage struct {
-	Key          StructFieldFullUsageKey
-	NestedFields StructNestedFields
-	Positions    []token.Position
+	Key             StructFieldFullUsageKey
+	NestedFields    StructNestedFields
+	VirtAccessPaths []VirtAccessPath
 
 	dm             StructDirectUsageMap
 	seenStructures map[*types.Named]struct{}
@@ -137,11 +142,13 @@ func (ffu StructFieldFullUsage) stringWithIndent(ident int) string {
 	var out = []string{prefix + ffu.Key.String()}
 
 	if verbose {
-		positions := []string{}
-		for _, pos := range ffu.Positions {
-			positions = append(positions, prefix+pos.String())
+		for _, vpaths := range ffu.VirtAccessPaths {
+			positions := []string{prefix + vpaths[0].Pos.String()}
+			for _, p := range vpaths[1:] {
+				positions = append(positions, prefix+"  "+p.Pos.String())
+			}
+			out = append(out, positions...)
 		}
-		out = append(out, positions...)
 	}
 
 	var keys StructFieldFullUsageKeys = make([]StructFieldFullUsageKey, len(ffu.NestedFields))
@@ -169,20 +176,20 @@ func (ffu StructFieldFullUsage) copy() StructFieldFullUsage {
 		newSeenStructs[k] = v
 	}
 
-	newPositions := make([]token.Position, len(ffu.Positions))
-	copy(newPositions, ffu.Positions)
+	newVPaths := make([]VirtAccessPath, len(ffu.VirtAccessPaths))
+	copy(newVPaths, ffu.VirtAccessPaths)
 
 	return StructFieldFullUsage{
-		dm:             ffu.dm,
-		Key:            ffu.Key,
-		NestedFields:   newNestedFields,
-		seenStructures: newSeenStructs,
-		Positions:      newPositions,
+		dm:              ffu.dm,
+		Key:             ffu.Key,
+		NestedFields:    newNestedFields,
+		seenStructures:  newSeenStructs,
+		VirtAccessPaths: newVPaths,
 	}
 }
 
 // build build nested fields for a given Named structure or Named interface (baseStruct).
-func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.Named, seenStructures map[*types.Named]struct{}) {
+func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.Named, seenStructures map[*types.Named]struct{}, fromPaths []VirtAccessPath, graph *callgraph.Graph) {
 	if _, ok := seenStructures[baseStruct]; ok {
 		return
 	}
@@ -193,12 +200,44 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 		return
 	}
 
-	for nestedField, positions := range du {
+	for nestedField, vaps := range du {
+		var vAccessPaths []VirtAccessPath
+		if fromPaths == nil {
+			vAccessPaths = make([]VirtAccessPath, 0, len(vaps))
+			for _, vap := range vaps {
+				vAccessPaths = append(vAccessPaths, VirtAccessPath{vap})
+			}
+		} else {
+			// Check whether this virtual access can be tracked back along the access path
+			for _, vpath := range fromPaths {
+				fp := vpath[len(vpath)-1] // guaranteed there is at least one point in path
+				for _, vap := range vaps {
+					reachable := checkInstructionReachability(fp.Instr, vap.Instr, graph)
+					fmt.Printf("from instr: %s (%d)\nto instr: %s (%d)\n%t\n",
+						fp.Instr, int(fp.Pos.Line),
+						vap.Instr, int(vap.Pos.Line),
+						reachable,
+					)
+					if !checkInstructionReachability(fp.Instr, vap.Instr, graph) {
+						continue
+					}
+					p := make(VirtAccessPath, 0, len(vpath)+1)
+					copy(p, vpath)
+					p = append(p, vap)
+					vAccessPaths = append(vAccessPaths, p)
+				}
+			}
+		}
+
+		if len(vAccessPaths) == 0 {
+			continue
+		}
+
 		ffu := StructFieldFullUsage{
-			dm:             dm,
-			seenStructures: seenStructures,
-			NestedFields:   map[StructFieldFullUsageKey]StructFieldFullUsage{},
-			Positions:      positions,
+			dm:              dm,
+			seenStructures:  seenStructures,
+			NestedFields:    map[StructFieldFullUsageKey]StructFieldFullUsage{},
+			VirtAccessPaths: vAccessPaths,
 		}
 
 		t := nestedField.DereferenceRElem()
@@ -224,7 +263,7 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 					Variant:     du,
 				}
 				ffu.Key = k
-				ffu.NestedFields.build(dm, du, ffu.seenStructures)
+				ffu.NestedFields.build(dm, du, ffu.seenStructures, ffu.VirtAccessPaths, graph)
 				nsf[k] = ffu
 			}
 		case *types.Struct:
@@ -233,7 +272,7 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 				StructField: nestedField,
 			}
 			ffu.Key = k
-			ffu.NestedFields.build(dm, nt, ffu.seenStructures)
+			ffu.NestedFields.build(dm, nt, ffu.seenStructures, ffu.VirtAccessPaths, graph)
 			nsf[k] = ffu
 		default:
 			panic("will never happen")
@@ -241,10 +280,27 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 	}
 }
 
-// buildUsages build Usages for one Named type. When it is a structure, it will build usage for the structure as long
-// as the structure appears in the "dm". When it is an interface, it will build usage for all structures appear in the "dm"
-// that implement the interface.
-func (us StructFullUsages) buildUsages(root *types.Named) {
+func checkInstructionReachability(fi, ti ssa.Instruction, graph *callgraph.Graph) bool {
+	if fi.Block() == ti.Block() {
+		// TODO: comparing Pos with NoPos taken into consideration.
+		return true
+	}
+	if fi.Parent() == ti.Parent() {
+		return fi.Block().Dominates(ti.Block())
+	}
+	fn := graph.Nodes[fi.Parent()]
+	tn := graph.Nodes[ti.Parent()]
+	return len(callgraph.PathSearch(fn, func(n *callgraph.Node) bool {
+		return n == tn
+	})) != 0
+}
+
+// buildUsages build usages for one Named type, which is either a structure or an interface. In case of interface, it will
+// build for all its implementors.
+// The meaning of "build usages" here means to regard the input type as the root structure, recursively iterate its fields to
+// check whether the virtual access from this type to this field occurs in the direct usage map. Addtionally, we will ensure
+// that the virtual access is reachable back to the place where the root type occurs, in turns of call graph.
+func (us StructFullUsages) buildUsages(root *types.Named, graph *callgraph.Graph) {
 	// If the target Named type is an interface_property, we shall do the full usage processing
 	// on each of its variants that appear in the direct usage map.
 	if iRoot, ok := root.Underlying().(*types.Interface); ok {
@@ -261,7 +317,7 @@ func (us StructFullUsages) buildUsages(root *types.Named) {
 				Key:          k,
 				NestedFields: map[StructFieldFullUsageKey]StructFieldFullUsage{},
 			}
-			us.Usages[k].NestedFields.build(us.dm, du, map[*types.Named]struct{}{})
+			us.Usages[k].NestedFields.build(us.dm, du, map[*types.Named]struct{}{}, nil, graph)
 		}
 		return
 	}
@@ -278,7 +334,7 @@ func (us StructFullUsages) buildUsages(root *types.Named) {
 		Key:          k,
 		NestedFields: map[StructFieldFullUsageKey]StructFieldFullUsage{},
 	}
-	us.Usages[k].NestedFields.build(us.dm, root, map[*types.Named]struct{}{})
+	us.Usages[k].NestedFields.build(us.dm, root, map[*types.Named]struct{}{}, nil, graph)
 	return
 }
 
@@ -287,14 +343,14 @@ func (us StructFullUsages) buildUsages(root *types.Named) {
 // another Named structure or interface, we will try to go on extending the property.
 // We only extend the properties (of type structure) when the property is directly referenced somewhere, i.e.,
 // appears in "dm".
-func BuildStructFullUsages(dm StructDirectUsageMap, rootSet NamedTypeSet) StructFullUsages {
+func BuildStructFullUsages(dm StructDirectUsageMap, rootSet NamedTypeSet, graph *callgraph.Graph) StructFullUsages {
 	us := StructFullUsages{
 		dm:     dm,
 		Usages: map[StructFullUsageKey]StructFullUsage{},
 	}
 
 	for root := range rootSet {
-		us.buildUsages(root)
+		us.buildUsages(root, graph)
 	}
 	return us
 }

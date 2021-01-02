@@ -25,7 +25,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	pkgs, ssapkgs, err := usedtype.BuildPackages(".", flag.Args())
+	pkgs, ssapkgs, graph, err := usedtype.BuildPackages(".", flag.Args())
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -34,6 +34,6 @@ func main() {
 
 	targetNamedTypeSet := usedtype.FindPackageNamedType(pkgs, *pattern, nil)
 	directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
-	fus := usedtype.BuildStructFullUsages(directUsage, targetNamedTypeSet)
+	fus := usedtype.BuildStructFullUsages(directUsage, targetNamedTypeSet, graph)
 	fmt.Println(fus)
 }
