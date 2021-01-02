@@ -11,7 +11,12 @@ import (
 	"golang.org/x/tools/go/ssa"
 )
 
-type StructDirectUsage map[StructField][]token.Position
+type VirtAccessPoint struct {
+	Pos   token.Position
+	Instr ssa.Instruction
+}
+
+type StructDirectUsage map[StructField][]VirtAccessPoint
 
 type StructDirectUsageMap map[*types.Named]StructDirectUsage
 
@@ -25,7 +30,7 @@ func (us StructDirectUsage) StringWithIndent(indent int) string {
 
 	type structFieldUsage struct {
 		field StructField
-		pos   []token.Position
+		vps   []VirtAccessPoint
 	}
 
 	var indexes []int
@@ -34,7 +39,7 @@ func (us StructDirectUsage) StringWithIndent(indent int) string {
 		indexes = append(indexes, k.index)
 		tmpM[k.index] = structFieldUsage{
 			field: k,
-			pos:   v,
+			vps:   v,
 		}
 	}
 
@@ -42,8 +47,8 @@ func (us StructDirectUsage) StringWithIndent(indent int) string {
 	for _, index := range indexes {
 		field := fieldPrefix + tmpM[index].field.String()
 		var usages []string
-		for _, pos := range tmpM[index].pos {
-			usages = append(usages, usagePrefix+pos.String())
+		for _, vp := range tmpM[index].vps {
+			usages = append(usages, usagePrefix+vp.Pos.String())
 		}
 		output = append(output, fmt.Sprintf("%s\n%s", field, strings.Join(usages, "\n")))
 	}
@@ -81,13 +86,16 @@ func (m StructDirectUsageMap) record(pkg *packages.Package, instr ssa.Instructio
 		return
 	}
 	if len(m[nt]) == 0 {
-		m[nt] = map[StructField][]token.Position{}
+		m[nt] = map[StructField][]VirtAccessPoint{}
 	}
 	pos := instr.Pos()
 	if pos == token.NoPos {
 		pos = value.Pos()
 	}
-	m[nt][u] = append(m[nt][u], pkg.Fset.Position(pos))
+	m[nt][u] = append(m[nt][u], VirtAccessPoint{
+		Instr: instr,
+		Pos:   pkg.Fset.Position(pos),
+	})
 }
 
 // FindInPackageStructureDirectUsage searches among the ssapkgs to gather each virtual field access on exported fields
