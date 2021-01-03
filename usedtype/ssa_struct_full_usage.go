@@ -1,7 +1,6 @@
 package usedtype
 
 import (
-	"fmt"
 	"go/types"
 	"sort"
 	"strings"
@@ -236,7 +235,6 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 		vap_loop:
 			for _, vap := range vaps {
 				for fromNode := range fromNodes {
-					fmt.Printf("checking file://%s <-> file://%s", fromNode.Pos.String(), vap.Pos.String())
 					if graph != nil {
 						if !checkInstructionReachability(fromNode.Instr, vap.Instr, graph) {
 							continue
