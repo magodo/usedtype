@@ -1,6 +1,7 @@
 package usedtype
 
 import (
+	"fmt"
 	"go/types"
 	"sort"
 	"strings"
@@ -235,6 +236,7 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 		vap_loop:
 			for _, vap := range vaps {
 				for fromNode := range fromNodes {
+					fmt.Printf("checking file://%s <-> file://%s", fromNode.Pos.String(), vap.Pos.String())
 					if graph != nil {
 						if !checkInstructionReachability(fromNode.Instr, vap.Instr, graph) {
 							continue
@@ -319,7 +321,8 @@ func checkInstructionReachability(i1, i2 ssa.Instruction, graph *callgraph.Graph
 		return true
 	}
 	if i1.Parent() == i2.Parent() {
-		return i1.Block().Dominates(i2.Block()) || i2.Block().Dominates(i1.Block())
+		i1CanReachI2, i2CanReachI1 := BBCanReach(i1.Block(), i2.Block()), BBCanReach(i2.Block(), i1.Block())
+		return i1CanReachI2 || i2CanReachI1
 	}
 
 	// In case n1 can reach n2, it only means the function enclosing i1 has at least one

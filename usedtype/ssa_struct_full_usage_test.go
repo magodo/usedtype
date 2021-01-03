@@ -1,6 +1,7 @@
 package usedtype_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/magodo/usedtype/usedtype"
@@ -237,6 +238,21 @@ sdk.ModelA
     Property (property)
 `,
 		},
+		// 8
+		{
+			pathCrossBB,
+			[]string{"."},
+			"sdk",
+			usedtype.CallGraphTypeStatic,
+			nil,
+			`
+sdk.ModelA
+    ArrayOfProperty (array_of_property)
+        Int (int)
+sdk.Property
+    Int (int)
+`,
+		},
 	}
 
 	for idx, c := range cases {
@@ -245,7 +261,7 @@ sdk.ModelA
 		directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
 		targetRootSet := usedtype.FindPackageNamedType(pkgs, c.epattern, c.filter)
 		fus := usedtype.BuildStructFullUsages(directUsage, targetRootSet, graph)
-		//fmt.Println(fus.String())
+		fmt.Println(fus.String())
 		require.Equal(t, c.expect, "\n"+fus.String()+"\n", idx)
 	}
 }
