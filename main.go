@@ -16,7 +16,7 @@ var pattern = flag.String("p", "", "The regexp pattern of import path of the pac
 var debug = flag.Bool("d", false, "Whether to show debug log")
 var verbose = flag.Bool("v", false, "Whether to output the lines of code for each field usage")
 var callGraphType = flag.String("callgraph", "",
-	fmt.Sprintf("Whether to enable callgraph based analysis, can be one of: `%s`, `%s`, `%s`",
+	fmt.Sprintf(`Whether to enable callgraph based analysis, can be one of: "%s", "%s", "%s"`,
 		usedtype.CallGraphTypeNA, usedtype.CallGraphTypeCha, usedtype.CallGraphTypeStatic))
 
 func main() {
