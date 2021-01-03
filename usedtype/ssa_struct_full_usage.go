@@ -329,13 +329,13 @@ func checkInstructionReachability(i1, i2 ssa.Instruction, graph *callgraph.Graph
 	// all possible paths.
 	n1 := graph.Nodes[i1.Parent()]
 	n2 := graph.Nodes[i2.Parent()]
-	path1to2 := callgraph.PathSearch(n1, func(n *callgraph.Node) bool {
+	paths1to2 := callgraph.PathSearch(n1, func(n *callgraph.Node) bool {
 		return n == n2
 	})
-	path2to1 := callgraph.PathSearch(n2, func(n *callgraph.Node) bool {
+	paths2to1 := callgraph.PathSearch(n2, func(n *callgraph.Node) bool {
 		return n == n1
 	})
-	return len(path1to2) != 0 || len(path2to1) != 0
+	return len(paths1to2) != 0 || len(paths2to1) != 0
 }
 
 // buildUsages build usages for one Named type, which is either a structure or an interface. In case of interface, it will
