@@ -26,6 +26,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	log.Printf("Building packages (callgraph enabled: %t)...\n", *enableCallGraphAnalysis)
 	pkgs, ssapkgs, graph, err := usedtype.BuildPackages(".", flag.Args(), *enableCallGraphAnalysis)
 	if err != nil {
 		log.Fatal(err)
@@ -33,8 +34,12 @@ func main() {
 
 	usedtype.SetStructFieldUsageVerbose(*verbose)
 
+	log.Println("Finding package named type...")
 	targetNamedTypeSet := usedtype.FindPackageNamedType(pkgs, *pattern, nil)
+	log.Println("Finding in-package structure direct usages...")
 	directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
+	log.Println("Building struct full usages...")
 	fus := usedtype.BuildStructFullUsages(directUsage, targetNamedTypeSet, graph)
+	log.Println("Finish building full usages")
 	fmt.Println(fus)
 }

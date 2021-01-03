@@ -29,12 +29,28 @@ type StructFieldFullUsageKey struct {
 
 type StructFieldFullUsageKeys []StructFieldFullUsageKey
 
-type VirtAccessPath []VirtAccessPoint
+type VirtAccessNode struct {
+	From *VirtAccessNode
+	VirtAccessPoint
+}
+
+func (node VirtAccessNode) Path() []string {
+	depth := 0
+	for n := &node; n != nil; n = n.From {
+		depth++
+	}
+	vaps := make([]string, depth)
+
+	for n, i := &node, depth-1; i >= 0; i, n = i-1, n.From {
+		vaps[i] = n.VirtAccessPoint.Pos.String()
+	}
+	return vaps
+}
 
 type StructFieldFullUsage struct {
 	Key             StructFieldFullUsageKey
 	NestedFields    StructNestedFields
-	VirtAccessPaths []VirtAccessPath
+	VirtAccessNodes []VirtAccessNode
 
 	dm             StructDirectUsageMap
 	seenStructures map[*types.Named]struct{}
@@ -140,11 +156,12 @@ func (ffu StructFieldFullUsage) stringWithIndent(ident int) string {
 	prefix := strings.Repeat("  ", ident)
 	var out = []string{prefix + ffu.Key.String()}
 
-	if verbose {
-		for _, vpaths := range ffu.VirtAccessPaths {
-			positions := []string{prefix + vpaths[0].Pos.String()}
-			for _, p := range vpaths[1:] {
-				positions = append(positions, prefix+"  "+p.Pos.String())
+	if verbose && len(ffu.NestedFields) == 0 {
+		for _, vnode := range ffu.VirtAccessNodes {
+			vpath := vnode.Path()
+			positions := []string{prefix + "  " + vpath[0]}
+			for _, p := range vpath[1:] {
+				positions = append(positions, prefix+"  "+"  "+p)
 			}
 			out = append(out, positions...)
 		}
@@ -175,20 +192,20 @@ func (ffu StructFieldFullUsage) copy() StructFieldFullUsage {
 		newSeenStructs[k] = v
 	}
 
-	newVPaths := make([]VirtAccessPath, len(ffu.VirtAccessPaths))
-	copy(newVPaths, ffu.VirtAccessPaths)
+	newVNode := make([]VirtAccessNode, len(ffu.VirtAccessNodes))
+	copy(newVNode, ffu.VirtAccessNodes)
 
 	return StructFieldFullUsage{
 		dm:              ffu.dm,
 		Key:             ffu.Key,
 		NestedFields:    newNestedFields,
 		seenStructures:  newSeenStructs,
-		VirtAccessPaths: newVPaths,
+		VirtAccessNodes: newVNode,
 	}
 }
 
 // build build nested fields for a given Named structure or Named interface (baseStruct).
-func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.Named, seenStructures map[*types.Named]struct{}, fromPaths []VirtAccessPath, graph *callgraph.Graph) {
+func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.Named, seenStructures map[*types.Named]struct{}, fromNodes []VirtAccessNode, graph *callgraph.Graph) {
 	if _, ok := seenStructures[baseStruct]; ok {
 		return
 	}
@@ -200,31 +217,36 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 	}
 
 	for nestedField, vaps := range du {
-		var vAccessPaths []VirtAccessPath
-		if fromPaths == nil {
-			vAccessPaths = make([]VirtAccessPath, 0, len(vaps))
+		var vAccessNodes []VirtAccessNode
+
+		if fromNodes == nil {
+			vAccessNodes = make([]VirtAccessNode, 0, len(vaps))
 			for _, vap := range vaps {
-				vAccessPaths = append(vAccessPaths, VirtAccessPath{vap})
+				vAccessNodes = append(vAccessNodes, VirtAccessNode{
+					VirtAccessPoint: vap,
+				})
 			}
 		} else {
 			// Check whether this virtual access can be tracked back along the access path
-			for _, vpath := range fromPaths {
-				for _, vap := range vaps {
+		vap_loop:
+			for _, vap := range vaps {
+				for _, fromNode := range fromNodes {
 					if graph != nil {
-						fp := vpath[len(vpath)-1] // guaranteed there is at least one point in path
-						if !checkInstructionReachability(fp.Instr, vap.Instr, graph) {
+						if !checkInstructionReachability(fromNode.Instr, vap.Instr, graph) {
 							continue
 						}
 					}
-					vAccessPath := make(VirtAccessPath, 0, len(vpath)+1)
-					vAccessPath = append(vAccessPath, vpath...)
-					vAccessPath = append(vAccessPath, vap)
-					vAccessPaths = append(vAccessPaths, vAccessPath)
+					vAccessNodes = append(vAccessNodes, VirtAccessNode{
+						From:            &fromNode,
+						VirtAccessPoint: vap,
+					})
+					// As long as one path could reach, we will continue to evaluate the next virtual access point
+					continue vap_loop
 				}
 			}
 		}
 
-		if len(vAccessPaths) == 0 {
+		if len(vAccessNodes) == 0 {
 			continue
 		}
 
@@ -232,7 +254,7 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 			dm:              dm,
 			seenStructures:  seenStructures,
 			NestedFields:    map[StructFieldFullUsageKey]StructFieldFullUsage{},
-			VirtAccessPaths: vAccessPaths,
+			VirtAccessNodes: vAccessNodes,
 		}
 
 		t := nestedField.DereferenceRElem()
@@ -258,7 +280,7 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 					Variant:     du,
 				}
 				ffu.Key = k
-				ffu.NestedFields.build(dm, du, ffu.seenStructures, ffu.VirtAccessPaths, graph)
+				ffu.NestedFields.build(dm, du, ffu.seenStructures, ffu.VirtAccessNodes, graph)
 				nsf[k] = ffu
 			}
 		case *types.Struct:
@@ -267,7 +289,7 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 				StructField: nestedField,
 			}
 			ffu.Key = k
-			ffu.NestedFields.build(dm, nt, ffu.seenStructures, ffu.VirtAccessPaths, graph)
+			ffu.NestedFields.build(dm, nt, ffu.seenStructures, ffu.VirtAccessNodes, graph)
 			nsf[k] = ffu
 		default:
 			panic("will never happen")
