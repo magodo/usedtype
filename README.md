@@ -7,9 +7,11 @@
 ## Usage
 
 ```shell
-usedtype -p <def pkg pattern> <search package pattern>                                    
-  -p string                                                                               
-        The regexp pattern of import path of the package where the named types are defined
+usedtype -p <def pkg pattern> [options] <search package pattern>
+  -c    Whether to enable callgraph based analysis
+  -p string
+        The regexp pattern of import path of the package where the named types are defined.
+  -v    Whether to output the lines of code for each field usage
 ```
 
 ## Example

@@ -12,7 +12,7 @@ import (
 
 // BuildPackages accept the process argument and feed it to the packages.Load() to build
 // both packages.Package and usedtype.Package(s) with a whole program build.
-func BuildPackages(dir string, args []string) ([]*packages.Package, []*ssa.Package, *callgraph.Graph, error) {
+func BuildPackages(dir string, args []string, withCallGraph bool) ([]*packages.Package, []*ssa.Package, *callgraph.Graph, error) {
 	cfg := packages.Config{Dir: dir, Mode: packages.LoadAllSyntax}
 	pkgs, err := packages.Load(&cfg, args...)
 	if err != nil {
@@ -32,7 +32,10 @@ func BuildPackages(dir string, args []string) ([]*packages.Package, []*ssa.Packa
 	prog.Build()
 
 	// Build Callgraph
-	graph := cha.CallGraph(prog)
+	var graph *callgraph.Graph
+	if withCallGraph {
+		graph = cha.CallGraph(prog)
+	}
 
 	return pkgs, ssapkgs, graph, nil
 }

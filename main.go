@@ -13,6 +13,7 @@ const usage = `usedtype -p <def pkg pattern> [options] <search package pattern>`
 
 var pattern = flag.String("p", "", "The regexp pattern of import path of the package where the named types are defined.")
 var verbose = flag.Bool("v", false, "Whether to output the lines of code for each field usage")
+var enableCallGraphAnalysis = flag.Bool("c", false, "Whether to enable callgraph based analysis")
 
 func main() {
 	flag.Usage = func() {
@@ -25,7 +26,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	pkgs, ssapkgs, graph, err := usedtype.BuildPackages(".", flag.Args())
+	pkgs, ssapkgs, graph, err := usedtype.BuildPackages(".", flag.Args(), *enableCallGraphAnalysis)
 	if err != nil {
 		log.Fatal(err)
 	}

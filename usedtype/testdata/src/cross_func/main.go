@@ -5,7 +5,7 @@ import (
 )
 
 func main() {
-	model := sdk.ModelA{String: "x"}
+	model := sdk.ModelA{String: "x", Property: sdk.Property{}}
 	_ = model
 }
 

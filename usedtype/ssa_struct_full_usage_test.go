@@ -9,17 +9,19 @@ import (
 
 func TestFindInPackageFieldUsage(t *testing.T) {
 	cases := []struct {
-		dir      string
-		patterns []string
-		epattern string
-		filter   usedtype.FilterFunc
-		expect   string
+		dir       string
+		patterns  []string
+		epattern  string
+		withGraph bool
+		filter    usedtype.FilterFunc
+		expect    string
 	}{
 		// 0
 		{
 			pathA,
 			[]string{"."},
 			"sdk",
+			true,
 			nil,
 			`
 sdk.ModelA
@@ -44,6 +46,7 @@ sdk.Property
 			pathA,
 			[]string{"."},
 			"sdk",
+			true,
 			terraformSchemaTypeFilter,
 			`
 sdk.ModelA
@@ -67,6 +70,7 @@ sdk.ModelA
 			pathInterfaceProperty,
 			[]string{"."},
 			"sdk",
+			true,
 			terraformSchemaTypeFilter,
 			`
 sdk.Animal [sdk.Dog]
@@ -89,6 +93,7 @@ sdk.AnimalFamily [sdk.DogFamily]
 			pathInterfaceRoot,
 			[]string{"."},
 			"sdk",
+			true,
 			terraformSchemaTypeFilter,
 			`
 sdk.Animal [sdk.Dog]
@@ -104,6 +109,66 @@ sdk.Animal [sdk.Fish]
 			pathInterfaceNest,
 			[]string{"."},
 			"sdk",
+			false,
+			terraformSchemaTypeFilter,
+			`
+sdk.Animal [sdk.Bird]
+    Name (name)
+sdk.Animal [sdk.Dog]
+    Name (name)
+sdk.Animal [sdk.Fish]
+    Name (name)
+sdk.AnimalFamily [sdk.BirdFamily]
+    Animals (animals) [sdk.Bird]
+        Name (name)
+    Animals (animals) [sdk.Dog]
+        Name (name)
+    Animals (animals) [sdk.Fish]
+        Name (name)
+sdk.AnimalFamily [sdk.DogFamily]
+    Animals (animals) [sdk.Bird]
+        Name (name)
+    Animals (animals) [sdk.Dog]
+        Name (name)
+    Animals (animals) [sdk.Fish]
+        Name (name)
+sdk.AnimalFamily [sdk.FishFamily]
+    Animals (animals) [sdk.Bird]
+        Name (name)
+    Animals (animals) [sdk.Dog]
+        Name (name)
+    Animals (animals) [sdk.Fish]
+        Name (name)
+sdk.Zoo
+    AnimalFamilies (animal_family) [sdk.BirdFamily]
+        Animals (animals) [sdk.Bird]
+            Name (name)
+        Animals (animals) [sdk.Dog]
+            Name (name)
+        Animals (animals) [sdk.Fish]
+            Name (name)
+    AnimalFamilies (animal_family) [sdk.DogFamily]
+        Animals (animals) [sdk.Bird]
+            Name (name)
+        Animals (animals) [sdk.Dog]
+            Name (name)
+        Animals (animals) [sdk.Fish]
+            Name (name)
+    AnimalFamilies (animal_family) [sdk.FishFamily]
+        Animals (animals) [sdk.Bird]
+            Name (name)
+        Animals (animals) [sdk.Dog]
+            Name (name)
+        Animals (animals) [sdk.Fish]
+            Name (name)
+`,
+		},
+		// 5
+		{
+			pathInterfaceNest,
+			[]string{"."},
+			"sdk",
+			true,
 			terraformSchemaTypeFilter,
 			`
 sdk.Animal [sdk.Bird]
@@ -145,21 +210,37 @@ sdk.Zoo
             Name (name)
 `,
 		},
-		// 5
+		// 6
 		{
 			pathCrossFunc,
 			[]string{"."},
 			"sdk",
+			false,
 			terraformSchemaTypeFilter,
 			`
 sdk.ModelA
     String (string)
+    Property (property)
+        Int (int)
+`,
+		},
+		// 7
+		{
+			pathCrossFunc,
+			[]string{"."},
+			"sdk",
+			true,
+			terraformSchemaTypeFilter,
+			`
+sdk.ModelA
+    String (string)
+    Property (property)
 `,
 		},
 	}
 
 	for idx, c := range cases {
-		pkgs, ssapkgs, graph, err := usedtype.BuildPackages(c.dir, c.patterns)
+		pkgs, ssapkgs, graph, err := usedtype.BuildPackages(c.dir, c.patterns, c.withGraph)
 		require.NoError(t, err, idx)
 		directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
 		targetRootSet := usedtype.FindPackageNamedType(pkgs, c.epattern, c.filter)

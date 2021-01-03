@@ -209,10 +209,12 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 		} else {
 			// Check whether this virtual access can be tracked back along the access path
 			for _, vpath := range fromPaths {
-				fp := vpath[len(vpath)-1] // guaranteed there is at least one point in path
 				for _, vap := range vaps {
-					if !checkInstructionReachability(fp.Instr, vap.Instr, graph) {
-						continue
+					if graph != nil {
+						fp := vpath[len(vpath)-1] // guaranteed there is at least one point in path
+						if !checkInstructionReachability(fp.Instr, vap.Instr, graph) {
+							continue
+						}
 					}
 					vAccessPath := make(VirtAccessPath, 0, len(vpath)+1)
 					vAccessPath = append(vAccessPath, vpath...)
@@ -350,6 +352,7 @@ func (us StructFullUsages) buildUsages(root *types.Named, graph *callgraph.Graph
 // another Named structure or interface, we will try to go on extending the property.
 // We only extend the properties (of type structure) when the property is directly referenced somewhere, i.e.,
 // appears in "dm".
+// If `graph` is non-nil, we will further check the reachability when exteding the properties.
 func BuildStructFullUsages(dm StructDirectUsageMap, rootSet NamedTypeSet, graph *callgraph.Graph) StructFullUsages {
 	us := StructFullUsages{
 		dm:     dm,
