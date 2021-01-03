@@ -214,10 +214,10 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 					if !checkInstructionReachability(fp.Instr, vap.Instr, graph) {
 						continue
 					}
-					p := make(VirtAccessPath, 0, len(vpath)+1)
-					copy(p, vpath)
-					p = append(p, vap)
-					vAccessPaths = append(vAccessPaths, p)
+					vAccessPath := make(VirtAccessPath, 0, len(vpath)+1)
+					vAccessPath = append(vAccessPath, vpath...)
+					vAccessPath = append(vAccessPath, vap)
+					vAccessPaths = append(vAccessPaths, vAccessPath)
 				}
 			}
 		}
