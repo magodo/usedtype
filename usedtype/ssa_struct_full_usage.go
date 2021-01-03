@@ -1,7 +1,6 @@
 package usedtype
 
 import (
-	"fmt"
 	"go/types"
 	"sort"
 	"strings"
@@ -212,12 +211,6 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 			for _, vpath := range fromPaths {
 				fp := vpath[len(vpath)-1] // guaranteed there is at least one point in path
 				for _, vap := range vaps {
-					reachable := checkInstructionReachability(fp.Instr, vap.Instr, graph)
-					fmt.Printf("from instr: %s (%d)\nto instr: %s (%d)\n%t\n",
-						fp.Instr, int(fp.Pos.Line),
-						vap.Instr, int(vap.Pos.Line),
-						reachable,
-					)
 					if !checkInstructionReachability(fp.Instr, vap.Instr, graph) {
 						continue
 					}
@@ -280,19 +273,33 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 	}
 }
 
-func checkInstructionReachability(fi, ti ssa.Instruction, graph *callgraph.Graph) bool {
-	if fi.Block() == ti.Block() {
-		// TODO: comparing Pos with NoPos taken into consideration.
+// checkInstructionReachability checks whether two instructions can reach the other in either direction.
+// Ideally, for a read field access, we should ensure the read of the parent structure can reach the child field's read;
+// Otherwise, for a write field access, we should ensure the write of the child field happens first.
+// However, it is non-trivial in SSA to determine whether one instrucution (Field/FieldAddr) is for a later read or write.
+// Practically, we ignore this difference here, but simply check whether two instructions can reach the other in either direction.
+func checkInstructionReachability(i1, i2 ssa.Instruction, graph *callgraph.Graph) bool {
+	if i1.Block() == i2.Block() {
 		return true
 	}
-	if fi.Parent() == ti.Parent() {
-		return fi.Block().Dominates(ti.Block())
+	if i1.Parent() == i2.Parent() {
+		return i1.Block().Dominates(i2.Block()) || i2.Block().Dominates(i1.Block())
 	}
-	fn := graph.Nodes[fi.Parent()]
-	tn := graph.Nodes[ti.Parent()]
-	return len(callgraph.PathSearch(fn, func(n *callgraph.Node) bool {
-		return n == tn
+
+	// In case n1 can reach n2, it only means the function enclosing i1 has at least one
+	// path that calls the function enclosing i2.
+	// TODO: we should ensure the i1 can reach the callsite. We didn't do it here for now
+	// since `callgraph.PathSearch` only returns an arbitrary path, whilst we should check
+	// all possible paths.
+	n1 := graph.Nodes[i1.Parent()]
+	n2 := graph.Nodes[i2.Parent()]
+	reachable1to2 := len(callgraph.PathSearch(n1, func(n *callgraph.Node) bool {
+		return n == n2
 	})) != 0
+	reachable2to1 := len(callgraph.PathSearch(n2, func(n *callgraph.Node) bool {
+		return n == n1
+	})) != 0
+	return reachable1to2 || reachable2to1
 }
 
 // buildUsages build usages for one Named type, which is either a structure or an interface. In case of interface, it will

@@ -13,6 +13,7 @@ var (
 	pathInterfaceProperty string
 	pathInterfaceRoot     string
 	pathInterfaceNest     string
+	pathCrossFunc         string
 )
 
 func init() {
@@ -21,6 +22,7 @@ func init() {
 	pathInterfaceProperty = filepath.Join(pwd, "testdata", "src", "interface_property")
 	pathInterfaceRoot = filepath.Join(pwd, "testdata", "src", "interface_root")
 	pathInterfaceNest = filepath.Join(pwd, "testdata", "src", "interface_nest")
+	pathCrossFunc = filepath.Join(pwd, "testdata", "src", "cross_func")
 }
 
 func terraformSchemaTypeFilter(epkg *packages.Package, t *types.Named) bool {

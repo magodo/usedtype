@@ -145,12 +145,20 @@ sdk.Zoo
             Name (name)
 `,
 		},
+		// 5
+		{
+			pathCrossFunc,
+			[]string{"."},
+			"sdk",
+			terraformSchemaTypeFilter,
+			`
+sdk.ModelA
+    String (string)
+`,
+		},
 	}
 
 	for idx, c := range cases {
-		if idx != 4 {
-			continue
-		}
 		pkgs, ssapkgs, graph, err := usedtype.BuildPackages(c.dir, c.patterns)
 		require.NoError(t, err, idx)
 		directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
