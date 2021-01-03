@@ -9,19 +9,19 @@ import (
 
 func TestFindInPackageFieldUsage(t *testing.T) {
 	cases := []struct {
-		dir       string
-		patterns  []string
-		epattern  string
-		withGraph bool
-		filter    usedtype.FilterFunc
-		expect    string
+		dir           string
+		patterns      []string
+		epattern      string
+		callGraphType usedtype.CallGraphType
+		filter        usedtype.FilterFunc
+		expect        string
 	}{
 		// 0
 		{
 			pathA,
 			[]string{"."},
 			"sdk",
-			true,
+			usedtype.CallGraphTypeNA,
 			nil,
 			`
 sdk.ModelA
@@ -46,7 +46,7 @@ sdk.Property
 			pathA,
 			[]string{"."},
 			"sdk",
-			true,
+			usedtype.CallGraphTypeNA,
 			terraformSchemaTypeFilter,
 			`
 sdk.ModelA
@@ -70,7 +70,7 @@ sdk.ModelA
 			pathInterfaceProperty,
 			[]string{"."},
 			"sdk",
-			true,
+			usedtype.CallGraphTypeNA,
 			terraformSchemaTypeFilter,
 			`
 sdk.Animal [sdk.Dog]
@@ -93,7 +93,7 @@ sdk.AnimalFamily [sdk.DogFamily]
 			pathInterfaceRoot,
 			[]string{"."},
 			"sdk",
-			true,
+			usedtype.CallGraphTypeNA,
 			terraformSchemaTypeFilter,
 			`
 sdk.Animal [sdk.Dog]
@@ -109,7 +109,7 @@ sdk.Animal [sdk.Fish]
 			pathInterfaceNest,
 			[]string{"."},
 			"sdk",
-			false,
+			usedtype.CallGraphTypeNA,
 			terraformSchemaTypeFilter,
 			`
 sdk.Animal [sdk.Bird]
@@ -168,7 +168,7 @@ sdk.Zoo
 			pathInterfaceNest,
 			[]string{"."},
 			"sdk",
-			true,
+			usedtype.CallGraphTypeStatic,
 			terraformSchemaTypeFilter,
 			`
 sdk.Animal [sdk.Bird]
@@ -215,7 +215,7 @@ sdk.Zoo
 			pathCrossFunc,
 			[]string{"."},
 			"sdk",
-			false,
+			usedtype.CallGraphTypeNA,
 			terraformSchemaTypeFilter,
 			`
 sdk.ModelA
@@ -229,7 +229,7 @@ sdk.ModelA
 			pathCrossFunc,
 			[]string{"."},
 			"sdk",
-			true,
+			usedtype.CallGraphTypeStatic,
 			terraformSchemaTypeFilter,
 			`
 sdk.ModelA
@@ -240,7 +240,7 @@ sdk.ModelA
 	}
 
 	for idx, c := range cases {
-		pkgs, ssapkgs, graph, err := usedtype.BuildPackages(c.dir, c.patterns, c.withGraph)
+		pkgs, ssapkgs, graph, err := usedtype.BuildPackages(c.dir, c.patterns, c.callGraphType)
 		require.NoError(t, err, idx)
 		directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
 		targetRootSet := usedtype.FindPackageNamedType(pkgs, c.epattern, c.filter)

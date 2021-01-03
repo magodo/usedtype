@@ -2,17 +2,27 @@ package usedtype
 
 import (
 	"errors"
+	"fmt"
 
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/cha"
+	"golang.org/x/tools/go/callgraph/static"
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 )
 
+type CallGraphType string
+
+const (
+	CallGraphTypeCha    CallGraphType = "cha"
+	CallGraphTypeStatic               = "static"
+	CallGraphTypeNA                   = ""
+)
+
 // BuildPackages accept the process argument and feed it to the packages.Load() to build
 // both packages.Package and usedtype.Package(s) with a whole program build.
-func BuildPackages(dir string, args []string, withCallGraph bool) ([]*packages.Package, []*ssa.Package, *callgraph.Graph, error) {
+func BuildPackages(dir string, args []string, callgraphType CallGraphType) ([]*packages.Package, []*ssa.Package, *callgraph.Graph, error) {
 	cfg := packages.Config{Dir: dir, Mode: packages.LoadAllSyntax}
 	pkgs, err := packages.Load(&cfg, args...)
 	if err != nil {
@@ -33,8 +43,15 @@ func BuildPackages(dir string, args []string, withCallGraph bool) ([]*packages.P
 
 	// Build Callgraph
 	var graph *callgraph.Graph
-	if withCallGraph {
+	switch callgraphType {
+	case CallGraphTypeCha:
 		graph = cha.CallGraph(prog)
+	case CallGraphTypeStatic:
+		graph = static.CallGraph(prog)
+	case CallGraphTypeNA:
+		// do nothing
+	default:
+		return nil, nil, nil, fmt.Errorf("invalid call graph type: %s", callgraphType)
 	}
 
 	return pkgs, ssapkgs, graph, nil
