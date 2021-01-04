@@ -1,14 +1,20 @@
 package sdk
 
 type ModelA struct {
-	String                   string      `json:"string"`
-	Property                 Property    `json:"property"`
-	PointerOfProperty        *Property   `json:"pointer_of_property"`
-	ArrayOfString            []string    `json:"array_of_string"`
-	PointerOfArrayOfString   *[]string   `json:"pointer_of_array_of_string"`
-	ArrayOfProperty          []Property  `json:"array_of_property"`
-	PointerOfArrayOfProperty *[]Property `json:"pointer_of_array_of_property"`
-	ArrayOfPointerOfProperty []*Property `json:"array_of_pointer_of_property"`
+	String                   string        `json:"string"`
+	Property                 Property      `json:"property"`
+	PointerOfProperty        *Property     `json:"pointer_of_property"`
+	ArrayOfString            []string      `json:"array_of_string"`
+	PointerOfArrayOfString   *[]string     `json:"pointer_of_array_of_string"`
+	ArrayOfProperty          []Property    `json:"array_of_property"`
+	PointerOfArrayOfProperty *[]Property   `json:"pointer_of_array_of_property"`
+	ArrayOfPointerOfProperty []*Property   `json:"array_of_pointer_of_property"`
+	PropWrapper              PropWrapper   `json:"prop_wrapper"`
+	ArrOfPropWrapper         []PropWrapper `json:"array_of_prop_wrapper"`
+}
+
+type PropWrapper struct {
+	Prop Property `json:"prop"`
 }
 
 type Property struct {

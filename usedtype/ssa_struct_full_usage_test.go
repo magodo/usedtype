@@ -253,9 +253,22 @@ sdk.Property
     Int (int)
 `,
 		},
+		// 9
+		{
+			pathCrossFuncNoLink,
+			[]string{"."},
+			"sdk",
+			usedtype.CallGraphTypeStatic,
+			nil,
+			`
+`,
+		},
 	}
 
 	for idx, c := range cases {
+		if idx != 9 {
+			continue
+		}
 		pkgs, ssapkgs, graph, err := usedtype.BuildPackages(c.dir, c.patterns, c.callGraphType)
 		require.NoError(t, err, idx)
 		directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
