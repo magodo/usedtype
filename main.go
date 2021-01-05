@@ -30,11 +30,11 @@ func main() {
 
 	log.Debug("Finding package named type...")
 	log.Infof("Finding package named type...")
-	targetNamedTypeSet := usedtype.FindPackageNamedType(pkgs, *pattern, nil)
+	targetNamedTypeAllocSet := usedtype.FindNamedTypeAllocSetInPackage(pkgs, ssapkgs, *pattern, nil)
 	log.Infof("Finding in-package structure direct usages...")
 	directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
 	log.Infof("Building struct full usages...")
-	fus := usedtype.BuildStructFullUsages(directUsage, targetNamedTypeSet, graph)
+	fus := usedtype.BuildStructFullUsages(directUsage, targetNamedTypeAllocSet, graph)
 	log.Infof("Finish building full usages")
 	fmt.Println(fus)
 }
