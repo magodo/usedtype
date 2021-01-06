@@ -2,8 +2,6 @@
 
 `usedtype` is a tool to print the used named type (including structure and interface whose implementers are structure) and its members (recursively) in one or more Go packages.
 
-> ❗ NOTE: The process used in this tool tends to be over-estimated (i.e. sound) given the goal is to calculate truth structure usage (coverage). In other words, some field in structure is reported as used, might be actually not used.
-
 ## Usage
 
 ```shell
@@ -16,7 +14,11 @@ usedtype -p <def pkg pattern> [options] <search package pattern>
   -v    Whether to output the lines of code for each field usage
 ```
 
-Note that [`cha`](https://pkg.go.dev/golang.org/x/tools@v0.0.0-20210102185154-773b96fafca2/go/callgraph/cha) type tends to be quite time consuming and the result might be similar as no callgraph analysis at all (i.e. `""`). Whilst `cha` and `""` are guaranteed to be "sound" (superset of "truth"). On the otherhand, [`static`](https://pkg.go.dev/golang.org/x/tools@v0.0.0-20210102185154-773b96fafca2/go/callgraph/static) type is fast, but the analysis result only takes static call edges into considerations, which means the result might be "complete" (subset of "truth").
+### Callgraph Construction Method
+
+Note that [`cha`](https://pkg.go.dev/golang.org/x/tools@v0.0.0-20210102185154-773b96fafca2/go/callgraph/cha) type tends to be quite time consuming, and the result of current process used in this tool might be similar as no callgraph analysis at all (i.e. `""`) if your code has dynamic dispatches everywhere. Whilst the benefit of `cha` (and `""`) are guaranteed to be "sound" (superset of "truth").
+
+On the otherhand, [`static`](https://pkg.go.dev/golang.org/x/tools@v0.0.0-20210102185154-773b96fafca2/go/callgraph/static) type is fast, but the analysis result only takes [static calls](https://pkg.go.dev/golang.org/x/tools/go/ssa#CallCommon) into considerations. In which case, the [builtin function call and function variable](c and d case in "call" mode of SSA CallCommon section) and the [method call happens on interface type]("invoke" mode of SSA CallCommon section) will not be taken into consideration. This means the result might be "complete" (subset of "truth"). 
 
 ## Example
 
