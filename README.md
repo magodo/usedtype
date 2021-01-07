@@ -18,7 +18,7 @@ usedtype -p <def pkg pattern> [options] <search package pattern>
 
 Note that [`cha`](https://pkg.go.dev/golang.org/x/tools@v0.0.0-20210102185154-773b96fafca2/go/callgraph/cha) type tends to be quite time consuming, and the result of current process used in this tool might be similar as no callgraph analysis at all (i.e. `""`) if your code has dynamic dispatches everywhere. Whilst the benefit of `cha` (and `""`) are guaranteed to be "sound" (superset of "truth").
 
-On the otherhand, [`static`](https://pkg.go.dev/golang.org/x/tools@v0.0.0-20210102185154-773b96fafca2/go/callgraph/static) type is fast, but the analysis result only takes [static calls](https://pkg.go.dev/golang.org/x/tools/go/ssa#CallCommon) into considerations. In which case, the [builtin function call and function variable (declared then set)](c and d case in "call" mode of SSA CallCommon section) and the [method call happens on interface type]("invoke" mode of SSA CallCommon section) will not be taken into consideration. This means the result might be "complete" (subset of "truth"). 
+On the otherhand, [`static`](https://pkg.go.dev/golang.org/x/tools@v0.0.0-20210102185154-773b96fafca2/go/callgraph/static) type is fast, but the analysis result only takes [static calls](https://pkg.go.dev/golang.org/x/tools/go/ssa#CallCommon) into considerations. In which case, the builtin function call and function variable (declared then set) (c and d case in "call" mode of SSA CallCommon section) and the method call happens on interface type("invoke" mode of SSA CallCommon section) will not be taken into consideration. This means the result might be "complete" (subset of "truth"). 
 
 ## Example
 
