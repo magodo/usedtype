@@ -9,14 +9,15 @@
 ```shell
 usedtype -p <def pkg pattern> [options] <search package pattern>
   -callgraph string
-        Whether to enable callgraph based analysis, can be one of: "", "cha", "static"
+        Whether to enable callgraph based analysis, can be one of: "", "static", "cha", "rta", "pta"
+        (Note that rta and pta require a whole program (main or test), and include only functions reachable from main)
   -d    Whether to show debug log
   -p string
         The regexp pattern of import path of the package where the named types are defined.
   -v    Whether to output the lines of code for each field usage
 ```
 
-Note that [`cha`](https://pkg.go.dev/golang.org/x/tools@v0.0.0-20210102185154-773b96fafca2/go/callgraph/cha) type tends to be quite time consuming and the result might be similar as no callgraph analysis at all (i.e. `""`). Whilst `cha` and `""` are guaranteed to be "sound" (superset of "truth"). On the otherhand, [`static`](https://pkg.go.dev/golang.org/x/tools@v0.0.0-20210102185154-773b96fafca2/go/callgraph/static) type is fast, but the analysis result only takes static call edges into considerations, which means the result might be "complete" (subset of "truth").
+Note that [`cha`](https://pkg.go.dev/golang.org/x/tools@v0.0.0-20210102185154-773b96fafca2/go/callgraph/cha) type tends to be quite time consuming and the result might be similar as no callgraph analysis at all (i.e. `""`). Whilst `"'`, `cha`, `rta`, `pta` are guaranteed to be "sound" (superset of "truth"). On the otherhand, [`static`](https://pkg.go.dev/golang.org/x/tools@v0.0.0-20210102185154-773b96fafca2/go/callgraph/static) type is fast, but the analysis result only takes static call edges into considerations, which means the result might be "complete" (subset of "truth").
 
 ## Example
 
