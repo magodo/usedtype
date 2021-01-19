@@ -7,7 +7,8 @@
 ```shell
 usedtype -p <def pkg pattern> [options] <search package pattern>
   -callgraph string
-        Whether to enable callgraph based analysis, can be one of: "", "cha", "static"
+        Whether to enable callgraph based analysis, can be one of: "", "static", "cha", "rta", "pta"
+        (Note that rta and pta require a whole program (main or test), and include only functions reachable from main)
   -d    Whether to show debug log
   -p string
         The regexp pattern of import path of the package where the named types are defined.
@@ -16,9 +17,10 @@ usedtype -p <def pkg pattern> [options] <search package pattern>
 
 ### Callgraph Construction Method
 
-Note that [`cha`](https://pkg.go.dev/golang.org/x/tools@v0.0.0-20210102185154-773b96fafca2/go/callgraph/cha) type tends to be quite time consuming, and the result of current process used in this tool might be similar as no callgraph analysis at all (i.e. `""`) if your code has dynamic dispatches everywhere. Whilst the benefit of `cha` (and `""`) are guaranteed to be "sound" (superset of "truth").
+Speed: `"" > static > cha > rta > pta`
+Precision: `"" < static (unsound) < cha < rta < pta`
 
-On the otherhand, [`static`](https://pkg.go.dev/golang.org/x/tools@v0.0.0-20210102185154-773b96fafca2/go/callgraph/static) type is fast, but the analysis result only takes [static calls](https://pkg.go.dev/golang.org/x/tools/go/ssa#CallCommon) into considerations. In which case, the builtin function call and function variable (declared then set) (c and d case in "call" mode of SSA CallCommon section) and the method call happens on interface type("invoke" mode of SSA CallCommon section) will not be taken into consideration. This means the result might be "complete" (subset of "truth"). 
+Especially, [`static`](https://pkg.go.dev/golang.org/x/tools@v0.0.0-20210102185154-773b96fafca2/go/callgraph/static) only takes [static calls](https://pkg.go.dev/golang.org/x/tools/go/ssa#CallCommon) into considerations. In which case, the builtin function call and function variable (declared then set) (c and d case in "call" mode of SSA CallCommon section) and the method call happens on interface type("invoke" mode of SSA CallCommon section) will not be taken into consideration. This means the result might be "complete" (subset of "truth"). 
 
 ## Example
 
