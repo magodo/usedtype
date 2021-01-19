@@ -6,8 +6,10 @@ import (
 
 	"golang.org/x/tools/go/callgraph"
 	"golang.org/x/tools/go/callgraph/cha"
+	"golang.org/x/tools/go/callgraph/rta"
 	"golang.org/x/tools/go/callgraph/static"
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/go/pointer"
 	"golang.org/x/tools/go/ssa"
 	"golang.org/x/tools/go/ssa/ssautil"
 )
@@ -15,8 +17,10 @@ import (
 type CallGraphType string
 
 const (
-	CallGraphTypeCha    CallGraphType = "cha"
-	CallGraphTypeStatic               = "static"
+	CallGraphTypeStatic CallGraphType = "static"
+	CallGraphTypeCha                  = "cha"
+	CallGraphTypeRta                  = "rta"
+	CallGraphTypePta                  = "pta"
 	CallGraphTypeNA                   = ""
 )
 
@@ -44,10 +48,35 @@ func BuildPackages(dir string, args []string, callgraphType CallGraphType) ([]*p
 	// Build Callgraph
 	var graph *callgraph.Graph
 	switch callgraphType {
-	case CallGraphTypeCha:
-		graph = cha.CallGraph(prog)
 	case CallGraphTypeStatic:
 		graph = static.CallGraph(prog)
+	case CallGraphTypeCha:
+		graph = cha.CallGraph(prog)
+	case CallGraphTypeRta:
+		mains, err := mainPackages(prog.AllPackages())
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		var roots []*ssa.Function
+		for _, main := range mains {
+			roots = append(roots, main.Func("init"), main.Func("main"))
+		}
+		rtares := rta.Analyze(roots, true)
+		graph = rtares.CallGraph
+	case CallGraphTypePta:
+		mains, err := mainPackages(prog.AllPackages())
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		config := &pointer.Config{
+			Mains:          mains,
+			BuildCallGraph: true,
+		}
+		ptares, err := pointer.Analyze(config)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		graph = ptares.CallGraph
 	case CallGraphTypeNA:
 		// do nothing
 	default:
@@ -55,4 +84,19 @@ func BuildPackages(dir string, args []string, callgraphType CallGraphType) ([]*p
 	}
 
 	return pkgs, ssapkgs, graph, nil
+}
+
+// mainPackages returns the main packages to analyze.
+// Each resulting package is named "main" and has a main function.
+func mainPackages(pkgs []*ssa.Package) ([]*ssa.Package, error) {
+	var mains []*ssa.Package
+	for _, p := range pkgs {
+		if p != nil && p.Pkg.Name() == "main" && p.Func("main") != nil {
+			mains = append(mains, p)
+		}
+	}
+	if len(mains) == 0 {
+		return nil, fmt.Errorf("no main packages")
+	}
+	return mains, nil
 }
