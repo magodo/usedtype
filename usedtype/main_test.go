@@ -15,6 +15,8 @@ var (
 	pathInterfaceNest     string
 	pathCrossFunc         string
 	pathCrossBB           string
+	pathCrossFuncNoLink   string
+	pathInstrPos          string
 )
 
 func init() {
@@ -25,6 +27,14 @@ func init() {
 	pathInterfaceNest = filepath.Join(pwd, "testdata", "src", "interface_nest")
 	pathCrossFunc = filepath.Join(pwd, "testdata", "src", "cross_func")
 	pathCrossBB = filepath.Join(pwd, "testdata", "src", "cross_bb")
+	pathCrossFuncNoLink = filepath.Join(pwd, "testdata", "src", "cross_func_no_link")
+	pathInstrPos = filepath.Join(pwd, "testdata", "src", "instr_pos")
+}
+
+func filterTypeByName(typeName string) func(epkg *packages.Package, t *types.Named) bool {
+	return func(epkg *packages.Package, t *types.Named) bool {
+		return t.String() == typeName
+	}
 }
 
 func terraformSchemaTypeFilter(epkg *packages.Package, t *types.Named) bool {

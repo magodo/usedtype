@@ -12,11 +12,12 @@ func main() {
 		},
 	}
 
-	fish := sdk.Fish{
+	_ = sdk.Fish{
 		Name:      "nemo",
 		SwimSpeed: 10,
 	}
-	_ = fish
 
-	_ = dogFamily
+	animalFamily(dogFamily)
 }
+
+func animalFamily(family sdk.AnimalFamily) {}

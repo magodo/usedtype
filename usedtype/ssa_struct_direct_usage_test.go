@@ -12,7 +12,7 @@ func TestFindInPackageStructureDirectUsage(t *testing.T) {
 		dir      string
 		patterns []string
 		epattern string
-		filter   usedtype.FilterFunc
+		filter   usedtype.NamedTypeFilter
 		expect   string
 	}{
 		// 0

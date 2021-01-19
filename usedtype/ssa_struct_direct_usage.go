@@ -88,13 +88,9 @@ func (m StructDirectUsageMap) record(pkg *packages.Package, instr ssa.Instructio
 	if len(m[nt]) == 0 {
 		m[nt] = map[StructField][]VirtAccessPoint{}
 	}
-	pos := instr.Pos()
-	if pos == token.NoPos {
-		pos = value.Pos()
-	}
 	m[nt][u] = append(m[nt][u], VirtAccessPoint{
 		Instr: instr,
-		Pos:   pkg.Fset.Position(pos),
+		Pos:   InstrPosition(pkg.Fset, instr),
 	})
 }
 
