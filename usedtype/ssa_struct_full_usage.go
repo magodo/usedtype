@@ -308,6 +308,13 @@ func checkInstructionReachability(i1, i2 ssa.Instruction, graph *callgraph.Graph
 	// all possible paths.
 	n1 := graph.Nodes[i1.Parent()]
 	n2 := graph.Nodes[i2.Parent()]
+
+	// For some whole program algorithms (e.g. rta), the callgraph only contains the subset of functions that reachable from main().
+	// If the instruction here isn't reachable from main, then we should regard them as not reachable.
+	if n1 == nil || n2 == nil {
+		return false
+	}
+
 	paths1to2 := callgraph.PathSearch(n1, func(n *callgraph.Node) bool {
 		return n == n2
 	})
