@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/magodo/usedtype/usedtype"
 
@@ -29,7 +30,6 @@ func main() {
 
 	usedtype.SetStructFieldUsageVerbose(*verbose)
 
-	log.Debug("Finding package named type...")
 	log.Infof("Finding package named type...")
 	targetNamedTypeAllocSet := usedtype.FindNamedTypeAllocSetInPackage(pkgs, ssapkgs, *pattern, nil)
 	log.Infof("Finding in-package structure direct usages...")
@@ -59,5 +59,15 @@ func init() {
 		log.SetLevel(log.DebugLevel)
 	} else {
 		log.SetLevel(log.InfoLevel)
+	}
+
+	// If $GOMAXPROCS isn't set, use the full capacity of the machine.
+	// For small machines, use at least 4 threads.
+	if os.Getenv("GOMAXPROCS") == "" {
+		n := runtime.NumCPU()
+		if n < 4 {
+			n = 4
+		}
+		runtime.GOMAXPROCS(n)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"go/types"
 	"sort"
 	"strings"
+	"sync"
 
 	log "github.com/sirupsen/logrus"
 
@@ -230,6 +231,10 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 				}
 			}
 			vAccessPoints[vap] = struct{}{}
+			// In non-verbose mode, there is no need to record all vaps, only one is enough.
+			if !verbose {
+				break
+			}
 		}
 
 		if len(vAccessPoints) == 0 {
@@ -317,19 +322,19 @@ func checkInstructionReachability(i1, i2 ssa.Instruction, graph *callgraph.Graph
 // The meaning of "build usages" here means to regard the input type as the root structure, recursively iterate its fields to
 // check whether the virtual access from this type to this field occurs in the direct usage map.
 // If graph is given, we will further ensure that the virtual access is reachable back to the place where the root type occurs.
-func (us StructFullUsages) buildUsagesAmongAlloc(root *types.Named, allocSet AllocSet, graph *callgraph.Graph) {
+func (us StructFullUsages) buildUsagesAmongAlloc(wg *sync.WaitGroup, root *types.Named, allocSet AllocSet, graph *callgraph.Graph) {
 	// If the target Named type is an interface_property, we shall do the full usage processing
 	// on each of its variants that appear in the direct usage map.
 	if iRoot, ok := root.Underlying().(*types.Interface); ok {
-		for du := range us.dm {
-			if !types.Implements(du, iRoot) {
+		for named := range us.dm {
+			if !types.Implements(named, iRoot) {
 				continue
 			}
 			k := StructFullUsageKey{
 				Named:   root,
-				Variant: du,
+				Variant: named,
 			}
-			us.buildUsagesAmongAllocForStructure(k, allocSet, du, graph)
+			us.buildUsagesAmongAllocForStructure(wg, k, allocSet, named, graph)
 		}
 		return
 	}
@@ -341,11 +346,11 @@ func (us StructFullUsages) buildUsagesAmongAlloc(root *types.Named, allocSet All
 	k := StructFullUsageKey{
 		Named: root,
 	}
-	us.buildUsagesAmongAllocForStructure(k, allocSet, root, graph)
+	us.buildUsagesAmongAllocForStructure(wg, k, allocSet, root, graph)
 	return
 }
 
-func (us StructFullUsages) buildUsagesAmongAllocForStructure(k StructFullUsageKey, allocSet AllocSet, du *types.Named, graph *callgraph.Graph) {
+func (us StructFullUsages) buildUsagesAmongAllocForStructure(wg *sync.WaitGroup, k StructFullUsageKey, allocSet AllocSet, named *types.Named, graph *callgraph.Graph) {
 	usageAmongAlloc := StructFullUsageAmongAlloc{}
 	us.UsagesAmongAlloc[k] = usageAmongAlloc
 	for alloc := range allocSet {
@@ -356,7 +361,12 @@ func (us StructFullUsages) buildUsagesAmongAllocForStructure(k StructFullUsageKe
 			NestedFields: map[StructFieldFullUsageKey]StructFieldFullUsage{},
 		}
 		usageAmongAlloc[alloc] = fu
-		fu.NestedFields.build(us.dm, du, map[*types.Named]struct{}{}, alloc, graph)
+		wg.Add(1)
+		go func(alloc Alloc) {
+			defer wg.Done()
+			fu.NestedFields.build(us.dm, named, map[*types.Named]struct{}{}, alloc, graph)
+			log.Debugf("finish %s\n", named.String())
+		}(alloc)
 	}
 }
 
@@ -414,9 +424,11 @@ func BuildStructFullUsages(dm StructDirectUsageMap, rootSet NamedTypeAllocSet, g
 		UsagesAmongAlloc: map[StructFullUsageKey]StructFullUsageAmongAlloc{},
 	}
 
+	var wg sync.WaitGroup
 	for root, allocSet := range rootSet {
 		log.Debugf("building %s\n", root.String())
-		us.buildUsagesAmongAlloc(root, allocSet, graph)
+		us.buildUsagesAmongAlloc(&wg, root, allocSet, graph)
 	}
+	wg.Wait()
 	return us
 }
