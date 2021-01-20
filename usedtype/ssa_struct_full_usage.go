@@ -360,21 +360,21 @@ func (us StructFullUsages) buildUsagesAmongAlloc(wg *sync.WaitGroup, root *types
 func (us StructFullUsages) buildUsagesAmongAllocForStructure(wg *sync.WaitGroup, k StructFullUsageKey, allocSet AllocSet, named *types.Named, graph *callgraph.Graph) {
 	usageAmongAlloc := StructFullUsageAmongAlloc{}
 	us.UsagesAmongAlloc[k] = usageAmongAlloc
-	for alloc := range allocSet {
-		fu := StructFullUsage{
-			dm:           us.dm,
-			Key:          k,
-			Alloc:        alloc,
-			NestedFields: map[StructFieldFullUsageKey]StructFieldFullUsage{},
-		}
-		usageAmongAlloc[alloc] = fu
-		wg.Add(1)
-		go func(alloc Alloc) {
-			defer wg.Done()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for alloc := range allocSet {
+			fu := StructFullUsage{
+				dm:           us.dm,
+				Key:          k,
+				Alloc:        alloc,
+				NestedFields: map[StructFieldFullUsageKey]StructFieldFullUsage{},
+			}
+			usageAmongAlloc[alloc] = fu
 			fu.NestedFields.build(us.dm, named, map[*types.Named]struct{}{}, alloc, graph)
-			log.Debugf("finish %s\n", named.String())
-		}(alloc)
-	}
+		}
+		log.Debugf("finish %s\n", named.String())
+	}()
 }
 
 // Flatten merges all instances of StructFullUsage of a struct appear in different Alloc into one.
