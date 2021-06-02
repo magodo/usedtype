@@ -1,6 +1,7 @@
 package usedtype_test
 
 import (
+	"regexp"
 	"testing"
 
 	"github.com/magodo/usedtype/usedtype"
@@ -170,7 +171,7 @@ sdk.ModelA
 		pkgs, ssapkgs, graph, err := usedtype.BuildPackages(c.dir, c.patterns, c.callGraphType)
 		require.NoError(t, err, idx)
 		directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
-		targetRootSet := usedtype.FindNamedTypeAllocSetInPackage(pkgs, ssapkgs, c.epattern, c.filter)
+		targetRootSet := usedtype.FindNamedTypeAllocSetInPackage(pkgs, ssapkgs, regexp.MustCompile(c.epattern), c.filter)
 		fus := usedtype.BuildStructFullUsages(directUsage, targetRootSet, graph)
 		//fmt.Println(fus.String())
 		require.Equal(t, c.expect, "\n"+fus.String()+"\n", idx)

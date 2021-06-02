@@ -35,12 +35,11 @@ type AllocSet map[Alloc]struct{}
 type NamedTypeFilter func(pkg *packages.Package, t *types.Named) bool
 
 // FindPackageNamedTypeAllocSet finds all the Alloc instructions among the SSA packages, whose underlying type is
-// a named type that is defined in a package whose import path matches the "pattern".
+// a named type that is defined in a package whose import path matches the "p" (pattern).
 // If filter is given, it will further narrow down the result.
 // TODO: we should eliminate the case that the alloc takes the value from a function variable.
-func FindNamedTypeAllocSetInPackage(pkgs []*packages.Package, ssapkgs []*ssa.Package, pattern string, filter NamedTypeFilter) NamedTypeAllocSet {
+func FindNamedTypeAllocSetInPackage(pkgs []*packages.Package, ssapkgs []*ssa.Package, p *regexp.Regexp, filter NamedTypeFilter) NamedTypeAllocSet {
 	s := NamedTypeAllocSet{}
-	p := regexp.MustCompile(pattern)
 	for idx := range ssapkgs {
 		ssapkg := ssapkgs[idx]
 		pkg := pkgs[idx]

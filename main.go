@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 	"runtime"
 
 	"github.com/magodo/usedtype/usedtype"
@@ -31,7 +32,7 @@ func main() {
 	usedtype.SetStructFieldUsageVerbose(*verbose)
 
 	log.Infof("Finding package named type...")
-	targetNamedTypeAllocSet := usedtype.FindNamedTypeAllocSetInPackage(pkgs, ssapkgs, *pattern, nil)
+	targetNamedTypeAllocSet := usedtype.FindNamedTypeAllocSetInPackage(pkgs, ssapkgs, regexp.MustCompile(*pattern), nil)
 	log.Infof("Finding in-package structure direct usages...")
 	directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
 	log.Infof("Building struct full usages...")
