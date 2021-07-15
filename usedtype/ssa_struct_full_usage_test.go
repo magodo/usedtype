@@ -1,6 +1,7 @@
 package usedtype_test
 
 import (
+	"fmt"
 	"regexp"
 	"testing"
 
@@ -15,6 +16,7 @@ func TestFindInPackageFieldUsage(t *testing.T) {
 		epattern      string
 		callGraphType usedtype.CallGraphType
 		filter        usedtype.NamedTypeFilter
+		impl          usedtype.CustomImplements
 		expect        string
 	}{
 		// 0
@@ -23,6 +25,7 @@ func TestFindInPackageFieldUsage(t *testing.T) {
 			[]string{"."},
 			"sdk",
 			usedtype.CallGraphTypeNA,
+			nil,
 			nil,
 			`
 sdk.ModelA
@@ -50,6 +53,7 @@ sdk.Property
 			"sdk",
 			usedtype.CallGraphTypeNA,
 			filterTypeByName("sdk.AnimalFamily"),
+			nil,
 			`
 sdk.AnimalFamily [sdk.DogFamily]
     Animals (animals) [sdk.Dog]
@@ -67,6 +71,7 @@ sdk.AnimalFamily [sdk.DogFamily]
 			"sdk",
 			usedtype.CallGraphTypeNA,
 			filterTypeByName("sdk.Animal"),
+			nil,
 			`
 sdk.Animal [sdk.Dog]
     Name (name)
@@ -83,6 +88,7 @@ sdk.Animal [sdk.Fish]
 			"sdk",
 			usedtype.CallGraphTypeNA,
 			filterTypeByName("sdk.Zoo"),
+			nil,
 			`
 sdk.Zoo
     AnimalFamilies (animal_family) [sdk.BirdFamily]
@@ -115,6 +121,7 @@ sdk.Zoo
 			"sdk",
 			usedtype.CallGraphTypeNA,
 			filterTypeByName("sdk.ModelA"),
+			nil,
 			`
 sdk.ModelA
     String (string)
@@ -129,6 +136,7 @@ sdk.ModelA
 			"sdk",
 			usedtype.CallGraphTypeStatic,
 			filterTypeByName("sdk.ModelA"),
+			nil,
 			`
 sdk.ModelA
     String (string)
@@ -142,6 +150,7 @@ sdk.ModelA
 			"sdk",
 			usedtype.CallGraphTypeStatic,
 			filterTypeByName("sdk.ModelA"),
+			nil,
 			`
 sdk.ModelA
     ArrayOfProperty (array_of_property)
@@ -155,6 +164,7 @@ sdk.ModelA
 			"sdk",
 			usedtype.CallGraphTypeStatic,
 			filterTypeByName("sdk.ModelA"),
+			nil,
 			`
 sdk.ModelA
     String (string)
@@ -165,6 +175,21 @@ sdk.ModelA
             Int (int)
 `,
 		},
+		// 8
+		{
+			pathInterfaceNestAzureSDKTrack1,
+			[]string{"."},
+			"sdk",
+			usedtype.CallGraphTypeNA,
+			filterTypeByName("sdk.BasicMiddle"),
+			usedtype.AzureSDKTrack1Implements,
+			`
+sdk.BasicMiddle [sdk.B]
+    Name
+sdk.BasicMiddle [sdk.C]
+    Name
+`,
+		},
 	}
 
 	for idx, c := range cases {
@@ -172,8 +197,8 @@ sdk.ModelA
 		require.NoError(t, err, idx)
 		directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
 		targetRootSet := usedtype.FindNamedTypeAllocSetInPackage(pkgs, ssapkgs, regexp.MustCompile(c.epattern), c.filter)
-		fus := usedtype.BuildStructFullUsages(directUsage, targetRootSet, graph)
-		//fmt.Println(fus.String())
+		fus := usedtype.BuildStructFullUsages(directUsage, targetRootSet, graph, c.impl)
+		fmt.Println(fus.String())
 		require.Equal(t, c.expect, "\n"+fus.String()+"\n", idx)
 	}
 }

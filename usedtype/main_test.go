@@ -9,14 +9,15 @@ import (
 )
 
 var (
-	pathA                 string
-	pathInterfaceProperty string
-	pathInterfaceRoot     string
-	pathInterfaceNest     string
-	pathCrossFunc         string
-	pathCrossBB           string
-	pathCrossFuncNoLink   string
-	pathInstrPos          string
+	pathA                           string
+	pathInterfaceProperty           string
+	pathInterfaceRoot               string
+	pathInterfaceNest               string
+	pathInterfaceNestAzureSDKTrack1 string
+	pathCrossFunc                   string
+	pathCrossBB                     string
+	pathCrossFuncNoLink             string
+	pathInstrPos                    string
 )
 
 func init() {
@@ -25,6 +26,7 @@ func init() {
 	pathInterfaceProperty = filepath.Join(pwd, "testdata", "src", "interface_property")
 	pathInterfaceRoot = filepath.Join(pwd, "testdata", "src", "interface_root")
 	pathInterfaceNest = filepath.Join(pwd, "testdata", "src", "interface_nest")
+	pathInterfaceNestAzureSDKTrack1 = filepath.Join(pwd, "testdata", "src", "interface_nest_azure_sdk_track1")
 	pathCrossFunc = filepath.Join(pwd, "testdata", "src", "cross_func")
 	pathCrossBB = filepath.Join(pwd, "testdata", "src", "cross_bb")
 	pathCrossFuncNoLink = filepath.Join(pwd, "testdata", "src", "cross_func_no_link")

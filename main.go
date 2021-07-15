@@ -36,7 +36,7 @@ func main() {
 	log.Infof("Finding in-package structure direct usages...")
 	directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
 	log.Infof("Building struct full usages...")
-	fus := usedtype.BuildStructFullUsages(directUsage, targetNamedTypeAllocSet, graph)
+	fus := usedtype.BuildStructFullUsages(directUsage, targetNamedTypeAllocSet, graph, nil)
 	log.Infof("Finish building full usages")
 	fmt.Println(fus)
 }
