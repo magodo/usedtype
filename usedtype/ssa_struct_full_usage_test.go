@@ -1,12 +1,70 @@
 package usedtype_test
 
 import (
+	"fmt"
+	"go/types"
 	"regexp"
 	"testing"
 
 	"github.com/magodo/usedtype/usedtype"
 	"github.com/stretchr/testify/require"
 )
+
+func azureSDKTrack1Implements(v types.Type, nt *types.Named) bool {
+	t, ok := nt.Underlying().(*types.Interface)
+	if !ok {
+		return false
+	}
+	// Store the struct types that implement this interface.
+	implementors := []*types.Named{}
+
+	// Store the interfaces that inherit this interface, including itself.
+	interfaces := map[string]bool{
+		nt.Obj().Name(): true,
+	}
+
+	for i := 0; i < t.NumMethods(); i++ {
+		signature, ok := t.Method(i).Type().(*types.Signature)
+		if !ok {
+			continue
+		}
+
+		methodReturns := signature.Results()
+
+		// The return type is always (struct ptr/interface, bool)
+		if methodReturns.Len() != 2 {
+			continue
+		}
+
+		vt := methodReturns.At(0).Type()
+		vt = usedtype.DereferenceR(vt)
+		nt, ok := vt.(*types.Named)
+		if !ok {
+			continue
+		}
+
+		ut := nt.Underlying()
+
+		switch ut.(type) {
+		case *types.Interface:
+			interfaces[nt.Obj().Name()] = true
+		case *types.Struct:
+			implementors = append(implementors, nt)
+		}
+	}
+
+	for _, nt := range implementors {
+		// Skip the hypothetic base types from the implementers
+		if interfaces["Basic"+nt.Obj().Name()] {
+			continue
+		}
+		if types.Identical(nt, v) {
+			return true
+		}
+	}
+
+	return false
+}
 
 func TestFindInPackageFieldUsage(t *testing.T) {
 	cases := []struct {
@@ -15,6 +73,7 @@ func TestFindInPackageFieldUsage(t *testing.T) {
 		epattern      string
 		callGraphType usedtype.CallGraphType
 		filter        usedtype.NamedTypeFilter
+		impl          usedtype.CustomImplements
 		expect        string
 	}{
 		// 0
@@ -23,6 +82,7 @@ func TestFindInPackageFieldUsage(t *testing.T) {
 			[]string{"."},
 			"sdk",
 			usedtype.CallGraphTypeNA,
+			nil,
 			nil,
 			`
 sdk.ModelA
@@ -50,6 +110,7 @@ sdk.Property
 			"sdk",
 			usedtype.CallGraphTypeNA,
 			filterTypeByName("sdk.AnimalFamily"),
+			nil,
 			`
 sdk.AnimalFamily [sdk.DogFamily]
     Animals (animals) [sdk.Dog]
@@ -67,6 +128,7 @@ sdk.AnimalFamily [sdk.DogFamily]
 			"sdk",
 			usedtype.CallGraphTypeNA,
 			filterTypeByName("sdk.Animal"),
+			nil,
 			`
 sdk.Animal [sdk.Dog]
     Name (name)
@@ -83,6 +145,7 @@ sdk.Animal [sdk.Fish]
 			"sdk",
 			usedtype.CallGraphTypeNA,
 			filterTypeByName("sdk.Zoo"),
+			nil,
 			`
 sdk.Zoo
     AnimalFamilies (animal_family) [sdk.BirdFamily]
@@ -115,6 +178,7 @@ sdk.Zoo
 			"sdk",
 			usedtype.CallGraphTypeNA,
 			filterTypeByName("sdk.ModelA"),
+			nil,
 			`
 sdk.ModelA
     String (string)
@@ -129,6 +193,7 @@ sdk.ModelA
 			"sdk",
 			usedtype.CallGraphTypeStatic,
 			filterTypeByName("sdk.ModelA"),
+			nil,
 			`
 sdk.ModelA
     String (string)
@@ -142,6 +207,7 @@ sdk.ModelA
 			"sdk",
 			usedtype.CallGraphTypeStatic,
 			filterTypeByName("sdk.ModelA"),
+			nil,
 			`
 sdk.ModelA
     ArrayOfProperty (array_of_property)
@@ -155,6 +221,7 @@ sdk.ModelA
 			"sdk",
 			usedtype.CallGraphTypeStatic,
 			filterTypeByName("sdk.ModelA"),
+			nil,
 			`
 sdk.ModelA
     String (string)
@@ -165,6 +232,21 @@ sdk.ModelA
             Int (int)
 `,
 		},
+		// 8
+		{
+			pathInterfaceNestAzureSDKTrack1,
+			[]string{"."},
+			"sdk",
+			usedtype.CallGraphTypeNA,
+			filterTypeByName("sdk.BasicMiddle"),
+			azureSDKTrack1Implements,
+			`
+sdk.BasicMiddle [sdk.B]
+    Name
+sdk.BasicMiddle [sdk.C]
+    Name
+`,
+		},
 	}
 
 	for idx, c := range cases {
@@ -172,8 +254,13 @@ sdk.ModelA
 		require.NoError(t, err, idx)
 		directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
 		targetRootSet := usedtype.FindNamedTypeAllocSetInPackage(pkgs, ssapkgs, regexp.MustCompile(c.epattern), c.filter)
-		fus := usedtype.BuildStructFullUsages(directUsage, targetRootSet, graph)
-		//fmt.Println(fus.String())
+		fus := usedtype.BuildStructFullUsages(directUsage, targetRootSet,
+			&usedtype.StructFullBuildOption{
+				Callgraph:        graph,
+				CustomImplements: c.impl,
+			},
+		)
+		fmt.Println(fus.String())
 		require.Equal(t, c.expect, "\n"+fus.String()+"\n", idx)
 	}
 }

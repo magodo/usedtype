@@ -208,7 +208,7 @@ func (ffu StructFieldFullUsage) copy() StructFieldFullUsage {
 }
 
 // build build nested fields for a given Named structure or Named interface (baseStruct).
-func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.Named, seenStructures map[*types.Named]struct{}, origin Alloc, graph *callgraph.Graph) {
+func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.Named, seenStructures map[*types.Named]struct{}, origin Alloc, opt *StructFullBuildOption) {
 	if _, ok := seenStructures[baseStruct]; ok {
 		return
 	}
@@ -225,8 +225,8 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 
 		// Check whether this virtual access can be tracked from the original virtual access point
 		for _, vap := range vaps {
-			if graph != nil {
-				if !checkInstructionReachability(origin.Instr, vap.Instr, graph) {
+			if opt != nil && opt.Callgraph != nil {
+				if !checkInstructionReachability(origin.Instr, vap.Instr, opt.Callgraph) {
 					continue
 				}
 			}
@@ -261,16 +261,22 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 		switch t := nt.Underlying().(type) {
 		case *types.Interface:
 			for du := range dm {
-				ffu := ffu.copy()
-				if !types.Implements(du, t) {
-					continue
+				if opt != nil && opt.CustomImplements != nil {
+					if !opt.CustomImplements(du, nt) {
+						continue
+					}
+				} else {
+					if !types.Implements(du, t) {
+						continue
+					}
 				}
+				ffu := ffu.copy()
 				k := StructFieldFullUsageKey{
 					StructField: nestedField,
 					Variant:     du,
 				}
 				ffu.Key = k
-				ffu.NestedFields.build(dm, du, ffu.seenStructures, origin, graph)
+				ffu.NestedFields.build(dm, du, ffu.seenStructures, origin, opt)
 				nsf[k] = ffu
 			}
 		case *types.Struct:
@@ -279,7 +285,7 @@ func (nsf StructNestedFields) build(dm StructDirectUsageMap, baseStruct *types.N
 				StructField: nestedField,
 			}
 			ffu.Key = k
-			ffu.NestedFields.build(dm, nt, ffu.seenStructures, origin, graph)
+			ffu.NestedFields.build(dm, nt, ffu.seenStructures, origin, opt)
 			nsf[k] = ffu
 		default:
 			panic("will never happen")
@@ -328,20 +334,25 @@ func checkInstructionReachability(i1, i2 ssa.Instruction, graph *callgraph.Graph
 // build for all its implementors.
 // The meaning of "build usages" here means to regard the input type as the root structure, recursively iterate its fields to
 // check whether the virtual access from this type to this field occurs in the direct usage map.
-// If graph is given, we will further ensure that the virtual access is reachable back to the place where the root type occurs.
-func (us StructFullUsages) buildUsagesAmongAlloc(wg *sync.WaitGroup, root *types.Named, allocSet AllocSet, graph *callgraph.Graph) {
+func (us StructFullUsages) buildUsagesAmongAlloc(wg *sync.WaitGroup, root *types.Named, allocSet AllocSet, opt *StructFullBuildOption) {
 	// If the target Named type is an interface_property, we shall do the full usage processing
 	// on each of its variants that appear in the direct usage map.
 	if iRoot, ok := root.Underlying().(*types.Interface); ok {
 		for named := range us.dm {
-			if !types.Implements(named, iRoot) {
-				continue
+			if opt != nil && opt.CustomImplements != nil {
+				if !opt.CustomImplements(named, root) {
+					continue
+				}
+			} else {
+				if !types.Implements(named, iRoot) {
+					continue
+				}
 			}
 			k := StructFullUsageKey{
 				Named:   root,
 				Variant: named,
 			}
-			us.buildUsagesAmongAllocForStructure(wg, k, allocSet, named, graph)
+			us.buildUsagesAmongAllocForStructure(wg, k, allocSet, named, opt)
 		}
 		return
 	}
@@ -353,11 +364,11 @@ func (us StructFullUsages) buildUsagesAmongAlloc(wg *sync.WaitGroup, root *types
 	k := StructFullUsageKey{
 		Named: root,
 	}
-	us.buildUsagesAmongAllocForStructure(wg, k, allocSet, root, graph)
+	us.buildUsagesAmongAllocForStructure(wg, k, allocSet, root, opt)
 	return
 }
 
-func (us StructFullUsages) buildUsagesAmongAllocForStructure(wg *sync.WaitGroup, k StructFullUsageKey, allocSet AllocSet, named *types.Named, graph *callgraph.Graph) {
+func (us StructFullUsages) buildUsagesAmongAllocForStructure(wg *sync.WaitGroup, k StructFullUsageKey, allocSet AllocSet, named *types.Named, opt *StructFullBuildOption) {
 	usageAmongAlloc := StructFullUsageAmongAlloc{}
 	us.UsagesAmongAlloc[k] = usageAmongAlloc
 	wg.Add(1)
@@ -371,7 +382,7 @@ func (us StructFullUsages) buildUsagesAmongAllocForStructure(wg *sync.WaitGroup,
 				NestedFields: map[StructFieldFullUsageKey]StructFieldFullUsage{},
 			}
 			usageAmongAlloc[alloc] = fu
-			fu.NestedFields.build(us.dm, named, map[*types.Named]struct{}{}, alloc, graph)
+			fu.NestedFields.build(us.dm, named, map[*types.Named]struct{}{}, alloc, opt)
 		}
 		log.Debugf("finish %s\n", named.String())
 	}()
@@ -424,8 +435,7 @@ func (amongAlloc StructFullUsageAmongAlloc) Flatten() *StructFullUsage {
 // BuildStructFullUsages extends all the types in rootSet, as long as the type is a structure or interface
 // that is implemented by some structures. It only extends the properties (of type structure) when the
 // property is directly referenced somewhere, i.e. appears in "dm".
-// If `graph` is non-nil, we will further check the reachability when extending the properties.
-func BuildStructFullUsages(dm StructDirectUsageMap, rootSet NamedTypeAllocSet, graph *callgraph.Graph) StructFullUsages {
+func BuildStructFullUsages(dm StructDirectUsageMap, rootSet NamedTypeAllocSet, opt *StructFullBuildOption) StructFullUsages {
 	us := StructFullUsages{
 		dm:               dm,
 		UsagesAmongAlloc: map[StructFullUsageKey]StructFullUsageAmongAlloc{},
@@ -434,7 +444,7 @@ func BuildStructFullUsages(dm StructDirectUsageMap, rootSet NamedTypeAllocSet, g
 	var wg sync.WaitGroup
 	for root, allocSet := range rootSet {
 		log.Debugf("building %s\n", root.String())
-		us.buildUsagesAmongAlloc(&wg, root, allocSet, graph)
+		us.buildUsagesAmongAlloc(&wg, root, allocSet, opt)
 	}
 	wg.Wait()
 	return us
