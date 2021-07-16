@@ -2,12 +2,69 @@ package usedtype_test
 
 import (
 	"fmt"
+	"go/types"
 	"regexp"
 	"testing"
 
 	"github.com/magodo/usedtype/usedtype"
 	"github.com/stretchr/testify/require"
 )
+
+func azureSDKTrack1Implements(v types.Type, nt *types.Named) bool {
+	t, ok := nt.Underlying().(*types.Interface)
+	if !ok {
+		return false
+	}
+	// Store the struct types that implement this interface.
+	implementors := []*types.Named{}
+
+	// Store the interfaces that inherit this interface, including itself.
+	interfaces := map[string]bool{
+		nt.Obj().Name(): true,
+	}
+
+	for i := 0; i < t.NumMethods(); i++ {
+		signature, ok := t.Method(i).Type().(*types.Signature)
+		if !ok {
+			continue
+		}
+
+		methodReturns := signature.Results()
+
+		// The return type is always (struct ptr/interface, bool)
+		if methodReturns.Len() != 2 {
+			continue
+		}
+
+		vt := methodReturns.At(0).Type()
+		vt = usedtype.DereferenceR(vt)
+		nt, ok := vt.(*types.Named)
+		if !ok {
+			continue
+		}
+
+		ut := nt.Underlying()
+
+		switch ut.(type) {
+		case *types.Interface:
+			interfaces[nt.Obj().Name()] = true
+		case *types.Struct:
+			implementors = append(implementors, nt)
+		}
+	}
+
+	for _, nt := range implementors {
+		// Skip the hypothetic base types from the implementers
+		if interfaces["Basic"+nt.Obj().Name()] {
+			continue
+		}
+		if types.Identical(nt, v) {
+			return true
+		}
+	}
+
+	return false
+}
 
 func TestFindInPackageFieldUsage(t *testing.T) {
 	cases := []struct {
@@ -182,7 +239,7 @@ sdk.ModelA
 			"sdk",
 			usedtype.CallGraphTypeNA,
 			filterTypeByName("sdk.BasicMiddle"),
-			usedtype.AzureSDKTrack1Implements,
+			azureSDKTrack1Implements,
 			`
 sdk.BasicMiddle [sdk.B]
     Name
@@ -197,7 +254,12 @@ sdk.BasicMiddle [sdk.C]
 		require.NoError(t, err, idx)
 		directUsage := usedtype.FindInPackageStructureDirectUsage(pkgs, ssapkgs)
 		targetRootSet := usedtype.FindNamedTypeAllocSetInPackage(pkgs, ssapkgs, regexp.MustCompile(c.epattern), c.filter)
-		fus := usedtype.BuildStructFullUsages(directUsage, targetRootSet, graph, c.impl)
+		fus := usedtype.BuildStructFullUsages(directUsage, targetRootSet,
+			&usedtype.StructFullBuildOption{
+				Callgraph:        graph,
+				CustomImplements: c.impl,
+			},
+		)
 		fmt.Println(fus.String())
 		require.Equal(t, c.expect, "\n"+fus.String()+"\n", idx)
 	}
