@@ -88,7 +88,7 @@ func FindNamedTypeAllocSetInPackage(pkgs []*packages.Package, ssapkgs []*ssa.Pac
 				Position: InstrPosition(pkg.Fset, instr),
 			}] = struct{}{}
 		}
-		ssaTraversal := NewTraversal()
+		ssaTraversal := NewTraversal(false)
 		ssaTraversal.WalkInPackage(ssapkg, cb, nil)
 	}
 	return s

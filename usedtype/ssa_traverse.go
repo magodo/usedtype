@@ -7,7 +7,8 @@ import (
 )
 
 type Traversal struct {
-	seen seen
+	crosspkg bool
+	seen     seen
 }
 
 type seen struct {
@@ -16,8 +17,9 @@ type seen struct {
 	values       map[ssa.Value]struct{}
 }
 
-func NewTraversal() Traversal {
+func NewTraversal(crosspkg bool) Traversal {
 	return Traversal{
+		crosspkg: crosspkg,
 		seen: seen{
 			functions:    map[*ssa.Function]struct{}{},
 			instructions: map[ssa.Instruction]struct{}{},
@@ -59,11 +61,10 @@ func (t *Traversal) WalkInPackage(pkg *ssa.Package, icb WalkInstrCallback, vcb W
 }
 
 func (t *Traversal) walkFunction(pkg *ssa.Package, fn *ssa.Function, icb WalkInstrCallback, vcb WalkValueCallback) {
-	// Ignore cross package function call, since the function call in other
-	// package will be handled in that package. The final result will be composed
-	// from all the passes.
-	if fn.Package() != nil && fn.Package() != pkg {
-		return
+	if !t.crosspkg {
+		if fn.Package() != nil && fn.Package() != pkg {
+			return
+		}
 	}
 
 	// Record those functions have been traversed, to avoid cyclic call.

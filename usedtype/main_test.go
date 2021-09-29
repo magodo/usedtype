@@ -18,6 +18,7 @@ var (
 	pathCrossBB                     string
 	pathCrossFuncNoLink             string
 	pathInstrPos                    string
+	pathInitMethod                  string
 )
 
 func init() {
@@ -31,6 +32,7 @@ func init() {
 	pathCrossBB = filepath.Join(pwd, "testdata", "src", "cross_bb")
 	pathCrossFuncNoLink = filepath.Join(pwd, "testdata", "src", "cross_func_no_link")
 	pathInstrPos = filepath.Join(pwd, "testdata", "src", "instr_pos")
+	pathInitMethod = filepath.Join(pwd, "testdata", "src", "init_method")
 }
 
 func filterTypeByName(typeName string) func(epkg *packages.Package, t *types.Named) bool {

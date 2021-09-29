@@ -54,6 +54,14 @@ func TestFindInPackageStructureDirectUsage(t *testing.T) {
 			terraformSchemaTypeFilter,
 			``,
 		},
+		// 5
+		{
+			pathInitMethod,
+			[]string{"."},
+			"foo",
+			nil,
+			``,
+		},
 	}
 
 	for idx, c := range cases {

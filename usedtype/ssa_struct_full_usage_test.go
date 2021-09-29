@@ -247,6 +247,20 @@ sdk.BasicMiddle [sdk.C]
     Name
 `,
 		},
+		// 8
+		{
+			pathInitMethod,
+			[]string{"."},
+			"foo",
+			usedtype.CallGraphTypeNA,
+			nil,
+			nil,
+			`
+a/foo.Foo
+    Bar
+        Name
+`,
+		},
 	}
 
 	for idx, c := range cases {

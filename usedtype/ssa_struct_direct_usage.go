@@ -110,7 +110,7 @@ func FindInPackageStructureDirectUsage(pkgs []*packages.Package, ssapkgs []*ssa.
 				output.record(pkg, instr, instr.X, instr.Field)
 			}
 		}
-		ssaTraversal := NewTraversal()
+		ssaTraversal := NewTraversal(true)
 		ssaTraversal.WalkInPackage(ssapkg, cb, nil)
 	}
 
