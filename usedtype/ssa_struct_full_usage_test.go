@@ -250,7 +250,7 @@ sdk.BasicMiddle [sdk.C]
 		// 8
 		{
 			pathInitMethod,
-			[]string{"."},
+			[]string{".", "./bar"},
 			"foo",
 			usedtype.CallGraphTypeNA,
 			nil,

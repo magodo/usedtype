@@ -57,7 +57,7 @@ func TestFindInPackageStructureDirectUsage(t *testing.T) {
 		// 5
 		{
 			pathInitMethod,
-			[]string{"."},
+			[]string{".", "./bar"},
 			"foo",
 			nil,
 			``,

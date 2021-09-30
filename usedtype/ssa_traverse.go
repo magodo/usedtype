@@ -2,13 +2,13 @@ package usedtype
 
 import (
 	"fmt"
+	"go/types"
 
 	"golang.org/x/tools/go/ssa"
 )
 
 type Traversal struct {
-	crosspkg bool
-	seen     seen
+	seen seen
 }
 
 type seen struct {
@@ -17,9 +17,8 @@ type seen struct {
 	values       map[ssa.Value]struct{}
 }
 
-func NewTraversal(crosspkg bool) Traversal {
+func NewTraversal() Traversal {
 	return Traversal{
-		crosspkg: crosspkg,
 		seen: seen{
 			functions:    map[*ssa.Function]struct{}{},
 			instructions: map[ssa.Instruction]struct{}{},
@@ -58,13 +57,32 @@ func (t *Traversal) WalkInPackage(pkg *ssa.Package, icb WalkInstrCallback, vcb W
 			panic(fmt.Sprintf("unreachable: %T", m))
 		}
 	}
+
+	// Since the methods of package-level types do not belong to the package "member", which means above member-wise iteration
+	// will not cover those methods. We'll handle them below.
+	for _, typ := range pkg.Prog.RuntimeTypes() {
+		// Only handle package leve types that are named struct
+		if !IsUnderlyingNamedStruct(typ) {
+			continue
+		}
+		nt, _ := DereferenceR(typ).(*types.Named)
+
+		// Only handle the current package types
+		if nt.Obj().Pkg() != pkg.Pkg {
+			continue
+		}
+
+		mset := pkg.Prog.MethodSets.MethodSet(typ)
+		for i, n := 0, mset.Len(); i < n; i++ {
+			t.walkFunction(pkg, pkg.Prog.MethodValue(mset.At(i)), icb, vcb)
+		}
+	}
 }
 
 func (t *Traversal) walkFunction(pkg *ssa.Package, fn *ssa.Function, icb WalkInstrCallback, vcb WalkValueCallback) {
-	if !t.crosspkg {
-		if fn.Package() != nil && fn.Package() != pkg {
-			return
-		}
+	// We only walk through the functions defined in current package boundary.
+	if fn.Package() != nil && fn.Package() != pkg {
+		return
 	}
 
 	// Record those functions have been traversed, to avoid cyclic call.
